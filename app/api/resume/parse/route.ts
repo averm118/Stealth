@@ -39,7 +39,7 @@ export async function POST(request: Request) {
       })
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not parse the uploaded resume.";
+    const message = getSafeParseError(error);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
@@ -48,18 +48,7 @@ async function extractTextFromResume(file: File, buffer: Buffer) {
   const name = file.name.toLowerCase();
 
   if (name.endsWith(".pdf") || file.type === "application/pdf") {
-    const { PDFParse } = await import("pdf-parse");
-    const parser = new PDFParse({ data: buffer });
-    try {
-      const result = await parser.getText({
-        lineEnforce: true,
-        cellSeparator: "  ",
-        pageJoiner: "\n\n--- PAGE page_number OF total_number ---\n\n"
-      });
-      return result.text;
-    } finally {
-      await parser.destroy();
-    }
+    return extractTextFromPdf(buffer);
   }
 
   if (
@@ -75,4 +64,34 @@ async function extractTextFromResume(file: File, buffer: Buffer) {
   }
 
   throw new Error("Supported resume formats: PDF, DOCX, TXT, or MD.");
+}
+
+async function extractTextFromPdf(buffer: Buffer) {
+  try {
+    const { PDFParse } = await import("pdf-parse");
+    const parser = new PDFParse({ data: buffer });
+    try {
+      const result = await parser.getText({
+        lineEnforce: true,
+        cellSeparator: "  ",
+        pageJoiner: "\n\n--- PAGE page_number OF total_number ---\n\n"
+      });
+      if (result.text.trim()) return result.text;
+    } finally {
+      await parser.destroy();
+    }
+  } catch {
+    throw new Error("Could not read this PDF. Try exporting it as a text-based PDF, DOCX, TXT, or MD.");
+  }
+
+  throw new Error("No readable text was found in this PDF. If it is scanned, export it as DOCX, TXT, or MD first.");
+}
+
+function getSafeParseError(error: unknown) {
+  const message = error instanceof Error ? error.message : "";
+  if (message.includes("Object.defineProperty")) {
+    return "Could not read this PDF. Try exporting it as text-based PDF, DOCX, TXT, or MD.";
+  }
+
+  return message || "Could not parse the uploaded resume.";
 }

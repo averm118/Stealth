@@ -1,16 +1,18 @@
 "use client";
 
-import { Check, FileUp, Loader2, ShieldCheck, UserRound } from "lucide-react";
+import { BriefcaseBusiness, Check, ChevronDown, FileUp, Loader2, ShieldCheck, UserRound } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useAppState } from "@/components/app-state";
 import { Card } from "@/components/ui/card";
 import { Reveal } from "@/components/motion-primitives";
-import { extractCandidateProfile } from "@/lib/ai";
-import type { CandidateProfile } from "@/lib/types";
+import type { CandidateProfile, LookingFor } from "@/lib/types";
+
+const lookingForOptions: LookingFor[] = ["Internship", "Full-time job", "Part-time job"];
 
 export default function ProfilePage() {
   const { profile, updateProfile } = useAppState();
   const [sponsorshipNeeded, setSponsorshipNeeded] = useState(profile.visaSponsorshipNeeded);
+  const [lookingFor, setLookingFor] = useState<LookingFor>(profile.lookingFor);
   const [uploadState, setUploadState] = useState<{
     loading: boolean;
     message: string;
@@ -27,11 +29,23 @@ export default function ProfilePage() {
     setSponsorshipNeeded(profile.visaSponsorshipNeeded);
   }, [profile.visaSponsorshipNeeded]);
 
+  useEffect(() => {
+    setLookingFor(profile.lookingFor);
+  }, [profile.lookingFor]);
+
   function handleSponsorshipToggle(nextValue: boolean) {
     setSponsorshipNeeded(nextValue);
     updateProfile({
       ...profile,
       visaSponsorshipNeeded: nextValue
+    });
+  }
+
+  function handleLookingForChange(nextValue: LookingFor) {
+    setLookingFor(nextValue);
+    updateProfile({
+      ...profile,
+      lookingFor: nextValue
     });
   }
 
@@ -63,13 +77,37 @@ export default function ProfilePage() {
         throw new Error(result.error ?? "Could not parse this resume.");
       }
 
+      const extractionResponse = await fetch("/api/profile/extract", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          resumeText: result.text,
+          visaSponsorshipNeeded: sponsorshipNeeded,
+          lookingFor
+        })
+      });
+      const extractionResult = (await extractionResponse.json()) as {
+        profile?: CandidateProfile;
+        source?: "openrouter" | "local_fallback";
+        warning?: string;
+        error?: string;
+      };
+
+      if (!extractionResponse.ok || !extractionResult.profile) {
+        throw new Error(extractionResult.error ?? "Could not extract this resume profile.");
+      }
+
       updateProfile({
-        ...extractCandidateProfile(result.text),
-        visaSponsorshipNeeded: sponsorshipNeeded
+        ...extractionResult.profile,
+        visaSponsorshipNeeded: sponsorshipNeeded,
+        lookingFor
       });
       setUploadState({
         loading: false,
-        message: `${file.name} uploaded and analyzed.`,
+        message:
+          extractionResult.source === "local_fallback"
+            ? `${file.name} uploaded. Local fallback used because AI extraction was unavailable.`
+            : `${file.name} uploaded and analyzed with AI.`,
         error: "",
         fileName: file.name
       });
@@ -145,6 +183,36 @@ export default function ProfilePage() {
             </button>
           </div>
         </div>
+
+        <div className="mt-4 rounded-[26px] border border-black/[0.06] bg-white/70 p-5">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <p className="flex items-center gap-2 text-sm font-medium text-[#171b24]">
+                <BriefcaseBusiness size={16} className="text-[#5661d8]" />
+                Looking for
+              </p>
+              <p className="mt-1 text-sm leading-6 text-[#687180]">Tune matches around your current search type.</p>
+            </div>
+            <label className="relative w-full sm:w-48">
+              <span className="sr-only">Looking for</span>
+              <select
+                value={lookingFor}
+                onChange={(event) => handleLookingForChange(event.target.value as LookingFor)}
+                className="h-11 w-full appearance-none rounded-full border border-black/[0.08] bg-white px-4 pr-10 text-sm font-medium text-[#171b24] shadow-sm outline-none transition hover:bg-[#fbfbfd] focus:border-[#bdc5ff] focus:ring-2 focus:ring-[#bdc5ff]/40"
+              >
+                {lookingForOptions.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown
+                size={16}
+                className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-[#7a828f]"
+              />
+            </label>
+          </div>
+        </div>
       </Card>
       </Reveal>
 
@@ -160,28 +228,28 @@ export default function ProfilePage() {
 function MinimalProfileSummary({ profile }: Readonly<{ profile: CandidateProfile }>) {
   const confidence = getProfileConfidence(profile);
   const profileTitle = getProfileTitle(profile);
-  const evidence = [
-    cleanDefault(profile.education[0]),
-    ...profile.experienceFocus.slice(0, 2)
-  ].filter(Boolean);
+  const bestFitRoles = getBestFitRoles(profile);
+  const summary = getConciseSummary(profile);
+  const strongAspects = getStrongAspects(profile);
 
   return (
     <div className="flex h-full flex-col">
       <PanelHeader
         label="Profile"
         title={profileTitle}
-        description="A concise summary generated from your latest resume."
+        description={summary}
         icon={<UserRound size={16} />}
       />
 
       <div className="mt-8 rounded-[30px] border border-black/[0.06] bg-[#f7f8ff]/70 p-5 shadow-sm">
-        <ProfileRow label="Best fit" value={profile.targetRoles.slice(0, 2).join(", ")} />
+        <ProfileRow label="Best fit" value={bestFitRoles.join(", ")} />
         <ProfileRow label="Skills" value={profile.skills.slice(0, 5).join(", ")} />
-        <ProfileRow label="Evidence" value={evidence.join(" · ") || "Add more resume detail for stronger evidence."} />
+        <ProfileRow label="Strong aspects" value={strongAspects.join(" · ")} />
         <ProfileRow
           label="Visa"
           value={profile.visaSponsorshipNeeded ? "Sponsorship-aware matching enabled" : "No sponsorship requirement detected"}
         />
+        <ProfileRow label="Looking for" value={profile.lookingFor} />
       </div>
 
       <div className="mt-8 rounded-[26px] border border-black/[0.06] bg-white/70 p-5">
@@ -237,6 +305,64 @@ function getProfileTitle(profile: CandidateProfile) {
   if (topRole && education) return `${topRole} profile`;
   if (topRole) return `${topRole} candidate`;
   return "Candidate profile";
+}
+
+function getBestFitRoles(profile: CandidateProfile) {
+  const baseRoles = profile.targetRoles.length ? profile.targetRoles : ["Data Analyst"];
+
+  return baseRoles.slice(0, 2).map((role) => formatRoleForSearchType(role, profile.lookingFor));
+}
+
+function formatRoleForSearchType(role: string, lookingFor: LookingFor) {
+  const normalized = role
+    .replace(/\s+Internship$/i, "")
+    .replace(/\s+Intern$/i, "")
+    .replace(/\s+Part[-\s]?time$/i, "")
+    .replace(/\s+Full[-\s]?time$/i, "")
+    .trim();
+
+  if (lookingFor === "Internship") {
+    return /\bintern\b/i.test(role) ? role : `${normalized} Intern`;
+  }
+
+  if (lookingFor === "Part-time job") {
+    return `Part-time ${normalized}`;
+  }
+
+  return normalized;
+}
+
+function getConciseSummary(profile: CandidateProfile) {
+  const headline = cleanDefault(profile.headline);
+  const skills = profile.skills.slice(0, 3).join(", ");
+  const focus = profile.experienceFocus.slice(0, 2).join(" and ");
+
+  if (headline && headline !== defaultSummary(profile)) return headline;
+  if (skills && focus) return `${profile.lookingFor} candidate with ${skills} strengths across ${focus}.`;
+  if (skills) return `${profile.lookingFor} candidate with ${skills} strengths.`;
+  return `Profile generated from your latest resume for ${profile.lookingFor.toLowerCase()} roles.`;
+}
+
+function getStrongAspects(profile: CandidateProfile) {
+  const strengths = profile.strengths.map(toSentenceCase);
+  const focus = profile.experienceFocus.slice(0, 2).map(toSentenceCase);
+  const education = cleanDefault(profile.education[0]);
+  const aspects = [...strengths, ...focus, education].filter(Boolean);
+
+  return [...new Set(aspects)].slice(0, 3).length
+    ? [...new Set(aspects)].slice(0, 3)
+    : ["Resume uploaded", "Profile extracted", "Ready for matching"];
+}
+
+function defaultSummary(profile: CandidateProfile) {
+  return profile.lookingFor === "Internship"
+    ? "ASU student exploring analyst and AI internship roles"
+    : "ASU student exploring analyst and AI roles";
+}
+
+function toSentenceCase(value: string) {
+  if (!value) return value;
+  return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
 function getProfileConfidence(profile: CandidateProfile) {

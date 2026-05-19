@@ -2,21 +2,32 @@
 
 import Link from "next/link";
 import { BookmarkCheck, Inbox, Trash2 } from "lucide-react";
+import { useEffect, useState } from "react";
 import { useAppState } from "@/components/app-state";
 import { ScoreRing } from "@/components/score-ring";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { jobs } from "@/data/jobs";
 import { scoreJob } from "@/lib/scoring";
-import { SavedStatus } from "@/lib/types";
+import { Job, SavedStatus } from "@/lib/types";
 import { Reveal, Stagger, StaggerItem } from "@/components/motion-primitives";
 
 const statuses: SavedStatus[] = ["saved", "applied", "interview", "rejected", "offer"];
 
 export default function SavedPage() {
   const { profile, savedJobs, setJobStatus, removeSavedJob } = useAppState();
+  const [jobs, setJobs] = useState<Job[]>([]);
   const tracked = jobs.filter((job) => savedJobs[job.id]);
+
+  useEffect(() => {
+    async function loadJobs() {
+      const response = await fetch("/api/jobs");
+      const result = (await response.json()) as { jobs?: Job[] };
+      setJobs(result.jobs ?? []);
+    }
+
+    void loadJobs();
+  }, []);
 
   return (
     <div className="pb-24">

@@ -4,9 +4,10 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import { motion, useScroll, useTransform } from "framer-motion";
-import { BarChart3, BookmarkCheck, BriefcaseBusiness, Radar, Settings, UserRound } from "lucide-react";
+import { BarChart3, BookmarkCheck, Radar, Settings, UserRound } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { FloatingOrbs, PageTransition } from "@/components/motion-primitives";
+import { AuthStatus } from "@/components/auth-status";
 
 const navItems = [
   { href: "/dashboard", label: "Radar", icon: BarChart3 },
@@ -69,10 +70,7 @@ export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
               );
             })}
           </nav>
-          <Link href="/dashboard" className="hidden items-center gap-2 rounded-full bg-[#171b24] px-5 py-3 text-sm font-semibold text-white shadow-[0_18px_40px_rgba(20,25,34,0.16)] transition hover:-translate-y-0.5 hover:bg-[#262c37] sm:flex">
-            <BriefcaseBusiness size={16} />
-            Launch Demo
-          </Link>
+          <AuthStatus />
         </div>
       </motion.header>
       <main className="relative z-10 mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">

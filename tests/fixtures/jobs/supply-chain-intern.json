@@ -1,0 +1,13 @@
+{
+  "id": "fixture-supply-chain-intern",
+  "company": "Example Manufacturing",
+  "title": "Supply Chain Analyst Intern",
+  "location": "Phoenix, AZ",
+  "workType": "Hybrid",
+  "postedDate": "2026-05-18",
+  "sponsorshipFriendly": "medium",
+  "competitionLevel": "medium",
+  "skills": ["excel", "sql", "forecasting", "inventory", "supply chain"],
+  "description": "Support demand planning, inventory analytics, supplier tracking, and operational dashboards.",
+  "applyUrl": "https://example.com/apply"
+}

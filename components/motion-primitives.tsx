@@ -7,7 +7,7 @@ import type { ReactNode } from "react";
 export function PageTransition({ children }: Readonly<{ children: ReactNode }>) {
   return (
     <motion.div
-      initial={{ opacity: 0, y: 12, filter: "blur(10px)" }}
+      initial={false}
       animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
       transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
     >
@@ -24,7 +24,7 @@ export function Reveal({
   return (
     <motion.div
       className={className}
-      initial={{ opacity: 0, y: 24, filter: "blur(12px)" }}
+      initial={false}
       whileInView={{ opacity: 1, y: 0, filter: "blur(0px)" }}
       viewport={{ once: true, margin: "-80px" }}
       transition={{ duration: 0.72, delay, ease: [0.22, 1, 0.36, 1] }}
@@ -41,7 +41,7 @@ export function Stagger({
   return (
     <motion.div
       className={className}
-      initial="hidden"
+      initial={false}
       whileInView="show"
       viewport={{ once: true, margin: "-80px" }}
       variants={{
@@ -58,6 +58,7 @@ export function StaggerItem({ children, className }: Readonly<{ children: ReactN
   return (
     <motion.div
       className={className}
+      initial={false}
       variants={{
         hidden: { opacity: 0, y: 18, filter: "blur(10px)" },
         show: { opacity: 1, y: 0, filter: "blur(0px)", transition: { duration: 0.58, ease: [0.22, 1, 0.36, 1] } }

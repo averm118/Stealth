@@ -2,13 +2,23 @@
 
 import { Bell, Database, Shield, UserRound } from "lucide-react";
 import type { ElementType } from "react";
+import { useEffect, useState } from "react";
 import { useAppState } from "@/components/app-state";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Reveal, Stagger, StaggerItem } from "@/components/motion-primitives";
+import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 
 export default function SettingsPage() {
   const { profile, savedJobs } = useAppState();
+  const [email, setEmail] = useState("Signed in");
+
+  useEffect(() => {
+    const supabase = createBrowserSupabaseClient();
+    void supabase?.auth.getUser().then(({ data }) => {
+      setEmail(data.user?.email ?? "Signed in");
+    });
+  }, []);
 
   return (
     <div className="grid gap-6 pb-24 lg:grid-cols-[0.85fr_1.15fr]">
@@ -28,17 +38,17 @@ export default function SettingsPage() {
       <Stagger className="grid gap-5 md:grid-cols-2">
         <SettingCard icon={Shield} title="Visa preference" value={profile.visaSponsorshipNeeded ? "Sponsorship-aware scoring on" : "Standard scoring"} />
         <SettingCard icon={Bell} title="Alerts" value="Mock instant alerts enabled" />
-        <SettingCard icon={Database} title="Data layer" value={`${Object.keys(savedJobs).length} saved jobs in browser storage`} />
-        <SettingCard icon={UserRound} title="Account" value="Demo user, Supabase auth pending" />
+        <SettingCard icon={Database} title="Data layer" value={`${Object.keys(savedJobs).length} saved jobs synced with Supabase`} />
+        <SettingCard icon={UserRound} title="Account" value={email} />
       </Stagger>
       <Reveal className="lg:col-span-2">
       <Card className="p-7">
         <h2 className="text-lg font-semibold text-[#171b24]">Integration notes</h2>
         <div className="mt-4 grid gap-3 md:grid-cols-3">
           {[
-            "Supabase: add auth, profiles, jobs, saved_jobs, and match_scores tables.",
-            "AI: replace lib/ai.ts placeholder extraction with OpenAI/Claude structured output.",
-            "Radar: replace mock data with curated feeds or approved APIs before scraping."
+            "Supabase: auth, profiles, saved jobs, match scores, and job tables are connected.",
+            "AI: resume extraction and job compatibility run through server-side API routes.",
+            "Radar: deterministic dashboard scoring stays fast while job detail analysis goes deeper."
           ].map((note) => (
             <p key={note} className="rounded-3xl border border-black/[0.05] bg-[#fbfbfd] p-4 text-sm leading-6 text-[#687180]">{note}</p>
           ))}

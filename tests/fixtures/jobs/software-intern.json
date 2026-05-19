@@ -1,0 +1,13 @@
+{
+  "id": "fixture-software-intern",
+  "company": "Example AI",
+  "title": "Software Engineering Intern",
+  "location": "Remote",
+  "workType": "Remote",
+  "postedDate": "2026-05-18",
+  "sponsorshipFriendly": "medium",
+  "competitionLevel": "high",
+  "skills": ["react", "typescript", "node.js", "apis", "python"],
+  "description": "Build full-stack product features, backend APIs, and AI workflow tools.",
+  "applyUrl": "https://example.com/apply"
+}

@@ -119,6 +119,10 @@ export const defaultCandidateProfile: CandidateProfile = {
   education: ["Student profile not extracted yet"],
   experienceFocus: ["analytics", "operations"],
   extractionNotes: ["Paste a resume to extract stronger signals from education, projects, tools, and outcomes."],
+  roleEvidence: ["Default demo role direction; upload a resume for evidence-backed roles."],
+  skillEvidence: ["Default demo skills; upload a resume for evidence-backed skills."],
+  educationEvidence: ["Education has not been extracted yet."],
+  confidenceNotes: ["Default demo profile; confidence improves after resume upload."],
   personality: {
     summary: "Analytical, curious, and structured based on the default demo profile.",
     traits: [
@@ -137,7 +141,8 @@ export const defaultCandidateProfile: CandidateProfile = {
     communicationStyle: "Likely concise and business-oriented when explaining analysis."
   },
   goals: ["land a summer internship", "build experience in analytics and operations"],
-  visaSponsorshipNeeded: true
+  visaSponsorshipNeeded: true,
+  lookingFor: "Internship"
 };
 
 export function extractCandidateProfile(resumeText: string): CandidateProfile {
@@ -153,6 +158,9 @@ export function extractCandidateProfile(resumeText: string): CandidateProfile {
   const visaSponsorshipNeeded = /sponsorship|h-1b|h1b|f-1|f1|opt|cpt|international student|work authorization/.test(lower);
   const personality = extractPersonalitySignals(normalized);
   const strengths = extractStrengths(normalized, personality);
+  const roleEvidence = buildRoleEvidence(roleMatches);
+  const skillEvidence = buildSkillEvidence(normalized, skills);
+  const educationEvidence = education.length ? education.map((item) => `Education signal found: ${item}.`) : defaultCandidateProfile.educationEvidence;
 
   return {
     resumeText,
@@ -163,10 +171,54 @@ export function extractCandidateProfile(resumeText: string): CandidateProfile {
     education,
     experienceFocus,
     extractionNotes: buildExtractionNotes({ normalized, roleMatches, skills, education }),
+    roleEvidence,
+    skillEvidence,
+    educationEvidence,
+    confidenceNotes: buildConfidenceNotes({ roleMatches, skills, education, normalized }),
     personality,
     goals: inferGoals(normalized, targetRoles, visaSponsorshipNeeded),
-    visaSponsorshipNeeded
+    visaSponsorshipNeeded,
+    lookingFor: defaultCandidateProfile.lookingFor
   };
+}
+
+function buildRoleEvidence(roleMatches: ReturnType<typeof inferTargetRoles>) {
+  const evidence = roleMatches
+    .filter((match) => match.matchedSignals.length)
+    .map((match) => `${match.label}: ${match.matchedSignals.slice(0, 4).join(", ")}.`);
+
+  return evidence.length ? evidence : defaultCandidateProfile.roleEvidence;
+}
+
+function buildSkillEvidence(text: string, skills: string[]) {
+  const evidence = skills.map((skill) => {
+    const rule = skillRules.find((item) => item.label === skill);
+    const matchedAlias = rule?.aliases.find((alias) => hasPhrase(text, alias)) ?? skill;
+    return `${skill}: found "${matchedAlias}" in resume text.`;
+  });
+
+  return evidence.length ? evidence : defaultCandidateProfile.skillEvidence;
+}
+
+function buildConfidenceNotes({
+  roleMatches,
+  skills,
+  education,
+  normalized
+}: {
+  roleMatches: ReturnType<typeof inferTargetRoles>;
+  skills: string[];
+  education: string[];
+  normalized: string;
+}) {
+  const notes = [
+    roleMatches.length ? "Target roles are supported by resume language." : "Target role evidence is limited.",
+    skills.length >= 4 ? "Several concrete skills were detected." : "Skill evidence is thin.",
+    education.length ? "Education signal was detected." : "Education signal was not clearly detected.",
+    normalized.length > 1200 ? "Resume text has enough detail for a moderate confidence profile." : "Resume text is short, so extraction confidence should be cautious."
+  ];
+
+  return notes;
 }
 
 function extractSkills(text: string) {
@@ -182,9 +234,31 @@ function inferTargetRoles(text: string) {
     .map((rule) => {
       const matchedSignals = rule.signals.filter((signal) => hasPhrase(text, signal));
       const exactTitleBoost = hasPhrase(text, rule.label) ? 2 : 0;
+      const isSoftwareRole = rule.label === "AI/Software Intern";
+      const hasHardSoftwareEvidence = [
+        "software engineer",
+        "software engineering",
+        "backend",
+        "frontend",
+        "full-stack",
+        "full stack",
+        "react",
+        "typescript",
+        "node.js",
+        "nodejs",
+        "javascript",
+        "java",
+        "c++",
+        "github",
+        "api",
+        "apis",
+        "deployed",
+        "web app"
+      ].some((signal) => hasPhrase(text, signal));
+      const score = isSoftwareRole && !hasHardSoftwareEvidence ? 0 : matchedSignals.length + exactTitleBoost;
       return {
         label: rule.label,
-        score: matchedSignals.length + exactTitleBoost,
+        score,
         matchedSignals
       };
     })

@@ -1,0 +1,14 @@
+[
+  {
+    "company": "Example Robotics",
+    "title": "Operations Data Analyst Intern",
+    "location": "Phoenix, AZ",
+    "workType": "Hybrid",
+    "postedDate": "2026-05-15",
+    "sponsorshipFriendly": "unknown",
+    "competitionLevel": "medium",
+    "skills": ["sql", "python", "operations", "tableau"],
+    "description": "Analyze operational data, build dashboards, and support process improvement projects.",
+    "applyUrl": "https://example.com/careers/operations-data-analyst-intern"
+  }
+]

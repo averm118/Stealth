@@ -3,6 +3,9 @@ export type SponsorshipFriendliness = "high" | "medium" | "low" | "unknown";
 export type CompetitionLevel = "low" | "medium" | "high";
 export type SavedStatus = "saved" | "applied" | "interview" | "rejected" | "offer";
 export type SignalConfidence = "low" | "medium" | "high";
+export type LookingFor = "Full-time job" | "Part-time job" | "Internship";
+export type JobSource = "mock" | "greenhouse" | "lever" | "ashby" | "workday" | "manual";
+export type JobSourceCategory = "tech" | "ai-software" | "logistics" | "retail" | "manufacturing" | "finance" | "operations";
 
 export type Job = {
   id: string;
@@ -18,6 +21,20 @@ export type Job = {
   applyUrl: string;
 };
 
+export type JobSourceMetadata = {
+  source: JobSource;
+  sourceJobId: string;
+  sourceUrl: string;
+  sourceCategory?: JobSourceCategory;
+  importedAt: string;
+  rawLocation: string;
+  qualityWarnings: string[];
+};
+
+export type IngestedJobRecord = Job & {
+  metadata: JobSourceMetadata;
+};
+
 export type CandidateProfile = {
   resumeText: string;
   headline: string;
@@ -27,6 +44,10 @@ export type CandidateProfile = {
   education: string[];
   experienceFocus: string[];
   extractionNotes: string[];
+  roleEvidence: string[];
+  skillEvidence: string[];
+  educationEvidence: string[];
+  confidenceNotes: string[];
   personality: {
     summary: string;
     traits: {
@@ -39,6 +60,7 @@ export type CandidateProfile = {
   };
   goals: string[];
   visaSponsorshipNeeded: boolean;
+  lookingFor: LookingFor;
 };
 
 export type MatchResult = {
@@ -47,4 +69,28 @@ export type MatchResult = {
   missingSkills: string[];
   why: string[];
   suggestedKeywords: string[];
+};
+
+export type ScoreBreakdownFactor = {
+  score: number;
+  reason: string;
+};
+
+export type ScoreBreakdown = {
+  skillFit: ScoreBreakdownFactor;
+  roleFit: ScoreBreakdownFactor;
+  projectEvidence: ScoreBreakdownFactor;
+  sponsorshipFit: ScoreBreakdownFactor;
+  competitionReadiness: ScoreBreakdownFactor;
+};
+
+export type AiJobAnalysis = MatchResult & {
+  scoreBreakdown: ScoreBreakdown;
+  confidence: SignalConfidence;
+  matchedEvidence: string[];
+  gaps: string[];
+  jobHighlights: string[];
+  applicationStrategy: string;
+  source: "openrouter" | "local_fallback";
+  generatedAt: string;
 };
