@@ -25,8 +25,8 @@ export async function callOpenRouterJson<T>({
   maxTokens,
   timeoutMs = 22000
 }: OpenRouterJsonOptions): Promise<T> {
-  const apiKey = process.env.OPENROUTER_API_KEY;
-  if (!apiKey) throw new Error("Missing OPENROUTER_API_KEY in .env.local.");
+  const apiKey = getEnvValue("OPENROUTER_API_KEY");
+  if (!apiKey) throw new Error("Missing OPENROUTER_API_KEY in the server environment.");
 
   const model = selectModel(task);
   const payload = {
@@ -91,8 +91,13 @@ export async function callOpenRouterJson<T>({
 }
 
 function selectModel(task: OpenRouterJsonOptions["task"]) {
-  if (task === "profile") return process.env.OPENROUTER_PROFILE_MODEL ?? process.env.OPENROUTER_MODEL ?? defaultModel;
-  return process.env.OPENROUTER_MATCH_MODEL ?? process.env.OPENROUTER_MODEL ?? defaultModel;
+  if (task === "profile") return getEnvValue("OPENROUTER_PROFILE_MODEL") ?? getEnvValue("OPENROUTER_MODEL") ?? defaultModel;
+  return getEnvValue("OPENROUTER_MATCH_MODEL") ?? getEnvValue("OPENROUTER_MODEL") ?? defaultModel;
+}
+
+function getEnvValue(key: string) {
+  const value = process.env[key]?.trim();
+  return value || undefined;
 }
 
 export function parseJsonContent(content: string) {
