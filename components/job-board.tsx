@@ -76,6 +76,7 @@ export function JobBoard({ jobs, metadata }: Readonly<{ jobs: Job[]; metadata: C
       : selectedLaneId === "resume-fit"
         ? resumeLane
         : lanes.find((lane) => lane.id === selectedLaneId) ?? resumeLane;
+  const activeLaneMode = selectedLaneId === "resume-fit" ? "resume-fit" : selectedLaneId === "all" ? "all" : "role-lane";
 
   const scoredJobs = useMemo(() => {
     return candidateJobs
@@ -89,13 +90,13 @@ export function JobBoard({ jobs, metadata }: Readonly<{ jobs: Job[]; metadata: C
           recencyScore: getRecencyScore(job.postedDate)
         };
       })
-      .filter(({ roleAffinity }) => !activeLane || roleAffinity > 0)
+      .filter((item) => shouldShowJobForLane(item.job, item.roleTier, activeLane, activeLaneMode))
       .filter(({ job }) => workType === "all" || job.workType === workType)
       .filter(({ job }) => sponsorship === "all" || job.sponsorshipFriendly === sponsorship)
       .filter(({ job }) => matchesRecency(job.postedDate, recency))
       .filter(({ job }) => matchesQuery(job, query))
       .sort((a, b) => getTierRank(b.roleTier) - getTierRank(a.roleTier) || b.roleAffinity - a.roleAffinity || b.match.score - a.match.score || b.recencyScore - a.recencyScore);
-  }, [activeLane, candidateJobs, profile, query, recency, roleDirections, sponsorship, workType]);
+  }, [activeLane, activeLaneMode, candidateJobs, profile, query, recency, roleDirections, sponsorship, workType]);
 
   const applyNow = scoredJobs.filter(({ match, roleTier }) => match.score >= 78 && (roleTier === "core" || roleTier === "adjacent")).slice(0, 12);
   const strongMatches = scoredJobs
@@ -322,6 +323,29 @@ function getRoleAffinity(alignment: ReturnType<typeof getJobAlignmentForDirectio
   if (alignment.tier === "adjacent") return 60 + alignment.score;
   if (alignment.tier === "weak") return 20 + alignment.score;
   return 0;
+}
+
+function shouldShowJobForLane(
+  job: Job,
+  roleTier: ScoredJob["roleTier"],
+  lane: RoleLane | null,
+  laneMode: "resume-fit" | "role-lane" | "all"
+) {
+  if (!lane) return true;
+  if (roleTier === "unrelated") return false;
+  if (laneMode !== "resume-fit") return roleTier !== "weak";
+  if (roleTier === "weak") return false;
+
+  if (lane.categoryIds.includes("supply-chain")) {
+    const jobText = `${job.title} ${job.description} ${job.skills.join(" ")}`.toLowerCase();
+    const hasSupplyOrOpsContext = /\b(supply chain|procurement|logistics|inventory|demand planning|forecasting|supplier|sourcing|purchasing|warehouse|distribution|operations|operational|fulfillment|planning)\b/i.test(jobText);
+    const isPureTechRole = /\b(software engineer|software engineering|backend|frontend|full stack|machine learning|data scientist|ai engineer|phd|new grad)\b/i.test(job.title);
+
+    if (isPureTechRole && !hasSupplyOrOpsContext) return false;
+    return hasSupplyOrOpsContext || roleTier === "core";
+  }
+
+  return true;
 }
 
 function getTierRank(tier: ScoredJob["roleTier"]) {
