@@ -91,7 +91,7 @@ export type AiJobAnalysis = MatchResult & {
   gaps: string[];
   jobHighlights: string[];
   applicationStrategy: string;
-  source: "openrouter" | "local_fallback";
+  source: "gemini" | "local_fallback";
   generatedAt: string;
 };
 
@@ -101,5 +101,5 @@ export type AiDashboardJobMatch = {
   reason: string;
   matchedSignals: string[];
   riskFlags: string[];
-  source: "openrouter";
+  source: "gemini";
 };

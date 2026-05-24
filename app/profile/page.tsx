@@ -88,7 +88,7 @@ export default function ProfilePage() {
       });
       const extractionResult = (await extractionResponse.json()) as {
         profile?: CandidateProfile;
-        source?: "openrouter" | "local_fallback";
+        source?: "gemini" | "local_fallback";
         warning?: string;
         error?: string;
       };

@@ -60,9 +60,9 @@ Avoid:
 - Supabase `jobs` table as the intended job catalog source of truth
 - Local JSON job ingestion cache as fallback when Supabase jobs are empty or unavailable
 - Resume parsing API route for uploads
-- OpenRouter API integration for AI candidate profile extraction
-- OpenRouter API integration for job-detail AI analysis and application strategy
-- Shared deterministic OpenRouter client with task-specific model routing, timeout, retry, and strict JSON parsing
+- Google Gemini API integration for AI candidate profile extraction
+- Google Gemini API integration for job-detail AI analysis and application strategy
+- Shared deterministic Gemini client with task-specific model routing, timeout, retry, and strict JSON parsing
 - Approved public job-feed ingestion foundation
 
 ## Main Routes
@@ -129,20 +129,17 @@ Main file:
 - `components/job-board.tsx`
 
 Current behavior:
-- Uses the candidate profile and the normalized job catalog to score and rank opportunities.
+- Uses the candidate profile and the normalized job catalog to deterministically rank opportunities.
 - The catalog merges imported jobs from `data/ingested-jobs.json` with mock fallback jobs from `data/jobs.ts`.
-- Displays a search input for roles, companies, locations, and skills.
-- Groups jobs into three ranked sections:
-  - `Apply these right now`: highest fit jobs, usually score 80+.
-  - `Strong backups`: good follow-up matches.
-  - `Worth monitoring`: lower-confidence or stretch roles.
+- Displays a search input for roles, companies, and locations.
+- Shows one focused `Top matches` list with role-lane filters.
 - Uses compact list rows rather than large job cards.
-- Each row shows rank, company, location, work type, posted date, title, top match reason, score, details link, and save action.
+- Each row shows rank, company logo, company, location, work type, posted date, title, deterministic match reason, match badges, details link, and save action.
 - Right side shows a compact focus summary:
-  - Top applications
-  - Sponsor-friendly roles
-  - Saved roles
-  - Recommendation
+  - Profile direction
+  - Search type
+  - Ranking method
+  - Radar guidance
 
 Dashboard design intent:
 - Personalized and calm.
@@ -193,7 +190,7 @@ Design intent:
 
 Job-detail AI behavior:
 - Main file: `app/api/jobs/score/route.ts`
-- Shared OpenRouter helper: `lib/openrouter.ts`
+- Shared Gemini helper: `lib/gemini.ts`
 - AI version constants: `lib/ai-versions.ts`
 - Job details call `/api/jobs/score` for the current job only.
 - Dashboard does not call AI for every job; it continues using fast deterministic scores.
@@ -213,7 +210,7 @@ Job-detail AI behavior:
 - The server caps weak or unrelated role-category matches so generic overlap like Python/SQL cannot inflate a poor-fit role.
 - The AI response includes confidence, resume-backed evidence, gaps, suggested keywords, concise reasoning, role brief highlights, and a 1-2 sentence application strategy.
 - If no cache exists, the page shows the deterministic score while AI explanation loads.
-- If OpenRouter fails, the endpoint returns deterministic fallback analysis with an `applicationStrategy`.
+- If Gemini fails, the endpoint returns deterministic fallback analysis with an `applicationStrategy`.
 - Users can manually request fresh analysis with `Refresh AI analysis`.
 
 ## Resume Upload
@@ -229,7 +226,7 @@ Supported formats:
 - TXT
 - MD
 
-The API extracts raw text, detects resume sections, and returns structured text. The client then calls `/api/profile/extract` to generate the candidate profile with OpenRouter.
+The API extracts raw text, detects resume sections, and returns structured text. The client then calls `/api/profile/extract` to generate the candidate profile with Gemini.
 
 ## Candidate Extraction
 
@@ -239,9 +236,9 @@ Main files:
 - `lib/ai.ts`
 
 Current behavior:
-- Server-side OpenRouter call using `OPENROUTER_API_KEY`.
-- Supports task-specific models through `OPENROUTER_PROFILE_MODEL`, falling back to `OPENROUTER_MODEL`.
-- The recommended fast free model is `nvidia/nemotron-3-nano-30b-a3b:free`; it uses JSON-object response formatting with server-side validation and falls back across configured models when available.
+- Server-side Gemini call using `GEMINI_API_KEY`.
+- Supports task-specific models through `GEMINI_PROFILE_MODEL`, falling back to `GEMINI_MODEL`.
+- The current direct Gemini model is `gemini-3.5-flash`; it uses JSON response formatting with server-side validation and a plain-JSON retry when structured output is unavailable.
 - Uses deterministic prompt instructions where supported plus a versioned prompt/cache key through `PROFILE_EXTRACTION_VERSION`.
 - Strict JSON schema response for the `CandidateProfile` shape.
 - Prompt asks the model to stay concise, evidence-backed, and avoid invented facts.
@@ -253,16 +250,16 @@ Current behavior:
 - Attaches the original resume text server-side after parsing the model response.
 - Normalizes arrays, personality traits, confidence values, evidence fields, sponsorship preference, and looking-for preference before saving profile state.
 - Server-side extraction cache keys include resume text, sponsorship preference, looking-for value, and `PROFILE_EXTRACTION_VERSION`.
-- Falls back to the deterministic local extractor if OpenRouter fails during a demo.
+- Falls back to the deterministic local extractor if Gemini fails during a demo.
 - `lib/ai.ts` remains the local fallback and still provides alias-aware skill detection, target role inference, education extraction, experience focus extraction, sponsorship signal handling, and confidence logic.
 
 Current reliability rules:
 - Every target role and skill should be supported by resume evidence.
 - Software roles require hard software evidence; Python/SQL alone is not enough.
 - Supply chain, operations, procurement, logistics, inventory, forecasting, and planning evidence takes priority over generic analytics/software inference.
-- Job-detail AI is one-job-at-a-time only. Radar uses AI selection after hard filters and avoids showing deterministic compatibility ratings on the dashboard.
-- Radar AI reviews up to 200 filtered openings and can return up to 50 student-first matches.
-- Radar prompt prefers internships, co-ops, university/student programs, new grad, early career, rotational/development programs, and entry-level analyst roles.
+- Job-detail AI is one-job-at-a-time only. Radar does not call AI and does not show numeric compatibility ratings.
+- Radar uses deterministic role, broad degree, looking-for, sponsorship, and freshness signals. It intentionally ignores profile skills and job skill arrays.
+- Radar prefers internships, co-ops, university/student programs, new grad, early career, rotational/development programs, and entry-level analyst roles based on the selected search type.
 - Jobs requiring 2+ years of professional experience should be excluded or heavily downgraded unless clearly labeled intern, new grad, early career, university/student, rotational, or development program.
 
 ## Job Data
@@ -305,8 +302,8 @@ Ingestion implementation:
 - `lib/job-ingestion/cache.ts`: local JSON cache read/write.
 - `lib/job-ingestion/manual.ts`: manual JSON import support.
 - `lib/job-ingestion/ingest.ts`: orchestration for approved, discovered, and manual jobs.
-- `scripts/job_scraper/run.py`: external BeautifulSoup/Playwright worker for allowlisted company-owned careers pages.
-- `.github/workflows/job-scraper.yml`: daily/manual GitHub Actions scraper job that posts into `/api/jobs/import-scraped`.
+- `scripts/job_scraper/run.py`: external BeautifulSoup/Playwright worker for allowlisted company-owned careers pages, with search-term expansion, JSON-LD parsing, detail-page hydration, pagination/load-more support, and shard arguments.
+- `.github/workflows/job-scraper.yml`: scheduled/manual GitHub Actions scraper job that runs every 6 hours across 4 shards and posts into `/api/jobs/import-scraped`.
 
 Current ingestion policy:
 - Approved connector types: Greenhouse, Lever, Ashby, curated/discovered Workday CXS feeds, manual JSON, and allowlisted `company_careers` scraper imports.
@@ -315,6 +312,8 @@ Current ingestion policy:
 - Workday ingestion uses explicit host, tenant, and site config discovered from known `myworkdayjobs.com` career links or curated config; it does not scrape Workday HTML.
 - Scraping is a supplemental path for company-owned public careers pages only. It does not scrape LinkedIn, Indeed, Handshake, Google Jobs, supported ATS pages, login pages, captcha pages, or blocked pages.
 - Scraping respects robots.txt and emits warnings instead of bypassing anti-bot controls.
+- Scraper configs live in `scripts/job_scraper/configs.json` and include company allowlist entries, search terms, per-company limits, list URL templates, optional static/Playwright selectors, and detail-body selectors.
+- Scraper metadata is preserved in job quality warnings, including extraction method, search term, list page, and list URL.
 - Ingestion is deterministic and does not call AI.
 - Broad company feeds are filtered to student-relevant roles by title and exclude senior/manager/lead/principal/staff/director roles.
 - Student-relevant import signals include internships, co-ops, university/student programs, new grad, early talent, campus, rotational/development programs, entry-level, and associate analyst roles.
@@ -323,6 +322,7 @@ Current ingestion policy:
 - Source fetches use limited concurrency so one slow public board does not stall the whole refresh.
 - Supabase jobs track `first_seen_at`, `last_seen_at`, `closed_at`, `is_active`, and `description_hash`.
 - Supabase discovery tables: `discovered_job_sources` and `job_discovery_runs`.
+- Supabase monitoring views include `active_jobs_by_source`, `active_scraped_jobs_by_company`, `last_seen_scraped_jobs`, and `scraper_freshness_by_company`.
 - Successful source refreshes mark disappeared jobs inactive; failed sources do not close existing jobs.
 - Each refresh is logged to `job_ingestion_runs`.
 
@@ -368,7 +368,7 @@ Fit score considers:
 - Sponsorship friendliness
 - Competition level
 
-Radar dashboard AI selection uses `/api/jobs/rank` after hard filters and does not show a deterministic numeric score. Deterministic scoring remains available only for fallback/internal utility surfaces.
+Radar dashboard matching is deterministic and does not call `/api/jobs/rank`. Deterministic scoring remains available only for fallback/internal utility surfaces and is not shown as a dashboard compatibility rating.
 
 Job detail scoring uses deeper AI compatibility analysis:
 - Full parsed resume text
@@ -468,11 +468,10 @@ npm run dev
 Required AI environment:
 
 ```bash
-OPENROUTER_API_KEY=your_openrouter_key_here
-OPENROUTER_MODEL=nvidia/nemotron-3-nano-30b-a3b:free
-OPENROUTER_PROFILE_MODEL=nvidia/nemotron-3-nano-30b-a3b:free
-OPENROUTER_MATCH_MODEL=nvidia/nemotron-3-nano-30b-a3b:free
-OPENROUTER_FALLBACK_MODELS=openrouter/free
+GEMINI_API_KEY=your_gemini_api_key_here
+GEMINI_MODEL=gemini-3.5-flash
+GEMINI_PROFILE_MODEL=gemini-3.5-flash
+GEMINI_MATCH_MODEL=gemini-3.5-flash
 NEXT_PUBLIC_APP_URL=http://localhost:3000
 ```
 

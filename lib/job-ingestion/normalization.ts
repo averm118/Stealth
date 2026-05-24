@@ -159,7 +159,12 @@ export function normalizeScrapedJobInput(posting: ScrapedJobInput, importedAt: s
 
   if (qualityWarnings.some((warning) => warning.startsWith("missing"))) return null;
 
-  const extractionWarning = posting.extractionMethod ? `scraped with ${posting.extractionMethod}` : "scraped from company careers page";
+  const scrapeWarnings = [
+    posting.extractionMethod ? `scraped with ${posting.extractionMethod}` : "scraped from company careers page",
+    posting.searchTerm ? `search term: ${posting.searchTerm}` : "",
+    typeof posting.listPage === "number" ? `list page: ${posting.listPage}` : "",
+    posting.listUrl ? `list url: ${posting.listUrl}` : ""
+  ].filter(Boolean);
 
   return {
     id: createJobId("company_careers", company, sourceJobId),
@@ -180,7 +185,7 @@ export function normalizeScrapedJobInput(posting: ScrapedJobInput, importedAt: s
       sourceCategory: posting.sourceCategory,
       importedAt,
       rawLocation,
-      qualityWarnings: [...qualityWarnings, extractionWarning]
+      qualityWarnings: [...qualityWarnings, ...scrapeWarnings]
     }
   };
 }

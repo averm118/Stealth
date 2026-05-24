@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { DASHBOARD_MATCH_VERSION } from "@/lib/ai-versions";
 import { prepareResumeForAi, stableTextHash } from "@/lib/ai-text";
 import { getJobs } from "@/lib/jobs";
-import { callOpenRouterJson } from "@/lib/openrouter";
+import { callGeminiJson } from "@/lib/gemini";
 import { getJobProfileAlignment } from "@/lib/role-taxonomy";
 import type { AiDashboardJobMatch, CandidateProfile, Job, SignalConfidence } from "@/lib/types";
 
@@ -49,7 +49,7 @@ export async function POST(request: Request) {
     const cachedMatches = dashboardRankCache.get(cacheKey);
     if (cachedMatches) return NextResponse.json({ matches: cachedMatches });
 
-    const matches = await rankJobsWithOpenRouter(jobs, profile);
+    const matches = await rankJobsWithGemini(jobs, profile);
     dashboardRankCache.set(cacheKey, matches);
     return NextResponse.json({ matches });
   } catch (error) {
@@ -64,8 +64,8 @@ async function resolveJobsById(jobIds: string[]) {
   return jobIds.map((jobId) => byId.get(jobId)).filter((job): job is Job => Boolean(job));
 }
 
-async function rankJobsWithOpenRouter(jobs: Job[], profile: CandidateProfile): Promise<AiDashboardJobMatch[]> {
-  const parsed = await callOpenRouterJson<RawDashboardRankResponse>({
+async function rankJobsWithGemini(jobs: Job[], profile: CandidateProfile): Promise<AiDashboardJobMatch[]> {
+  const parsed = await callGeminiJson<RawDashboardRankResponse>({
     task: "match",
     maxTokens: 5200,
     timeoutMs: 32000,
@@ -170,7 +170,7 @@ function normalizeAiMatches(value: unknown, jobs: Job[]) {
       reason,
       matchedSignals: cleanStringArray(record.matchedSignals, [], 4),
       riskFlags: cleanStringArray(record.riskFlags, [], 4),
-      source: "openrouter"
+      source: "gemini"
     });
     seen.add(record.jobId);
   }

@@ -3,7 +3,7 @@ import { JOB_MATCH_VERSION } from "@/lib/ai-versions";
 import { prepareResumeForAi, stableTextHash } from "@/lib/ai-text";
 import { scoreJob } from "@/lib/scoring";
 import { getJobById } from "@/lib/jobs";
-import { callOpenRouterJson } from "@/lib/openrouter";
+import { callGeminiJson } from "@/lib/gemini";
 import { getJobProfileAlignment } from "@/lib/role-taxonomy";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import type {
@@ -61,12 +61,12 @@ export async function POST(request: Request) {
       const cachedAnalysis = jobAnalysisCache.get(cacheKey);
       if (cachedAnalysis) return NextResponse.json({ analysis: cachedAnalysis });
 
-      const analysis = await scoreJobWithOpenRouter(job, profile);
+      const analysis = await scoreJobWithGemini(job, profile);
       jobAnalysisCache.set(cacheKey, analysis);
       await persistMatchScore(job.id, profile, analysis);
       return NextResponse.json({ analysis });
     } catch (error) {
-      console.warn("OpenRouter job scoring failed; using local fallback.", error);
+      console.warn("Gemini job scoring failed; using local fallback.", error);
       const analysis = buildFallbackAnalysis(job, profile);
       await persistMatchScore(job.id, profile, analysis);
       return NextResponse.json({ analysis });
@@ -123,10 +123,10 @@ function getJobAnalysisCacheKey(jobId: string, profile: CandidateProfile) {
   return `${JOB_MATCH_VERSION}:${jobId}:${hashProfile(profile)}`;
 }
 
-async function scoreJobWithOpenRouter(job: Job, profile: CandidateProfile): Promise<AiJobAnalysis> {
+async function scoreJobWithGemini(job: Job, profile: CandidateProfile): Promise<AiJobAnalysis> {
   const resumeText = prepareResumeForAi(profile.resumeText || "", maxResumeChars);
   const alignment = getJobProfileAlignment(job, profile);
-  const parsed = await callOpenRouterJson<Partial<AiJobAnalysis>>({
+  const parsed = await callGeminiJson<Partial<AiJobAnalysis>>({
     task: "match",
     maxTokens: 3200,
     schemaName: "resume_job_compatibility",
@@ -185,7 +185,7 @@ async function scoreJobWithOpenRouter(job: Job, profile: CandidateProfile): Prom
       }
     ]
   });
-  return normalizeAiAnalysis(parsed, job, profile, "openrouter");
+  return normalizeAiAnalysis(parsed, job, profile, "gemini");
 }
 
 function buildFallbackAnalysis(job: Job, profile: CandidateProfile): AiJobAnalysis {

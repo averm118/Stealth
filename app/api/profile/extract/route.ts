@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { defaultCandidateProfile, extractCandidateProfile } from "@/lib/ai";
 import { PROFILE_EXTRACTION_VERSION } from "@/lib/ai-versions";
 import { prepareResumeForAi, stableTextHash } from "@/lib/ai-text";
-import { callOpenRouterJson } from "@/lib/openrouter";
+import { callGeminiJson } from "@/lib/gemini";
 import type { CandidateProfile, LookingFor, SignalConfidence } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -12,7 +12,7 @@ const profileExtractionCache = new Map<string, CandidateProfile>();
 
 type ExtractionResponse = {
   profile: CandidateProfile;
-  source: "openrouter" | "local_fallback";
+  source: "gemini" | "local_fallback";
   warning?: string;
 };
 
@@ -36,12 +36,12 @@ export async function POST(request: Request) {
     if (cachedProfile) {
       return NextResponse.json({
         profile: cachedProfile,
-        source: "openrouter"
+        source: "gemini"
       } satisfies ExtractionResponse);
     }
 
     try {
-      const profile = await extractProfileWithOpenRouter({
+      const profile = await extractProfileWithGemini({
         resumeText,
         visaSponsorshipNeeded: sponsorshipNeeded,
         lookingFor: searchType
@@ -50,10 +50,10 @@ export async function POST(request: Request) {
 
       return NextResponse.json({
         profile,
-        source: "openrouter"
+        source: "gemini"
       } satisfies ExtractionResponse);
     } catch (error) {
-      console.warn("OpenRouter profile extraction failed; using local fallback.", error);
+      console.warn("Gemini profile extraction failed; using local fallback.", error);
       const fallbackProfile = {
         ...extractCandidateProfile(resumeText),
         visaSponsorshipNeeded: sponsorshipNeeded,
@@ -72,7 +72,7 @@ export async function POST(request: Request) {
   }
 }
 
-async function extractProfileWithOpenRouter({
+async function extractProfileWithGemini({
   resumeText,
   visaSponsorshipNeeded,
   lookingFor
@@ -82,7 +82,7 @@ async function extractProfileWithOpenRouter({
   lookingFor: LookingFor;
 }) {
   const trimmedResume = prepareResumeForAi(resumeText, maxResumeChars);
-  const parsed = await callOpenRouterJson<Partial<CandidateProfile>>({
+  const parsed = await callGeminiJson<Partial<CandidateProfile>>({
     task: "profile",
     maxTokens: 4200,
     schemaName: "candidate_profile_extraction",

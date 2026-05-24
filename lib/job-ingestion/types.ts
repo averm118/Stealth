@@ -40,4 +40,7 @@ export type ScrapedJobInput = Partial<Job> & {
   sourceCategory?: JobSourceCategory;
   scrapedAt?: string;
   extractionMethod?: "beautifulsoup" | "playwright";
+  searchTerm?: string;
+  listPage?: number;
+  listUrl?: string;
 };

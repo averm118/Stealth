@@ -7,7 +7,7 @@
     "sponsorshipFriendly": "medium",
     "competitionLevel": "high",
     "discoveredFromUrl": "https://careers.walmart.com/us/en/home",
-    "discoveredAt": "2026-05-23T05:36:26.409Z",
+    "discoveredAt": "2026-05-24T08:33:35.589Z",
     "status": "unsupported",
     "warnings": [
       "No supported Greenhouse, Lever, Ashby, or Workday board link found."
@@ -21,7 +21,7 @@
     "sponsorshipFriendly": "medium",
     "competitionLevel": "high",
     "discoveredFromUrl": "https://www.amazon.jobs/en/",
-    "discoveredAt": "2026-05-23T05:36:26.409Z",
+    "discoveredAt": "2026-05-24T08:33:35.589Z",
     "status": "unsupported",
     "warnings": [
       "No supported Greenhouse, Lever, Ashby, or Workday board link found."
@@ -35,7 +35,7 @@
     "sponsorshipFriendly": "medium",
     "competitionLevel": "high",
     "discoveredFromUrl": "https://www.apple.com/careers/us/",
-    "discoveredAt": "2026-05-23T05:36:26.409Z",
+    "discoveredAt": "2026-05-24T08:33:35.589Z",
     "status": "unsupported",
     "warnings": [
       "No supported Greenhouse, Lever, Ashby, or Workday board link found."
@@ -458,6 +458,15 @@
       "tenant": "target",
       "site": "targetcareers",
       "searchText": "intern",
+      "searchTerms": [
+        "intern",
+        "co-op",
+        "university",
+        "new grad",
+        "early career",
+        "graduate",
+        "analyst"
+      ],
       "pageLimit": 20,
       "maxPages": 3
     },
@@ -465,8 +474,431 @@
     "sponsorshipFriendly": "medium",
     "competitionLevel": "medium",
     "discoveredFromUrl": "https://target.wd5.myworkdayjobs.com/targetcareers",
-    "discoveredAt": "2026-05-23T05:36:26.409Z",
+    "discoveredAt": "2026-05-24T08:33:35.561Z",
     "status": "supported",
     "warnings": []
+  },
+  {
+    "id": "failed-verizon",
+    "company": "Verizon",
+    "source": "greenhouse",
+    "category": "tech",
+    "sponsorshipFriendly": "medium",
+    "competitionLevel": "high",
+    "discoveredFromUrl": "https://mycareer.verizon.com",
+    "discoveredAt": "2026-05-24T08:33:35.589Z",
+    "status": "failed",
+    "warnings": [
+      "https://mycareer.verizon.com returned 403"
+    ]
+  },
+  {
+    "id": "unsupported-lowes",
+    "company": "Lowe's",
+    "source": "greenhouse",
+    "category": "retail",
+    "sponsorshipFriendly": "medium",
+    "competitionLevel": "medium",
+    "discoveredFromUrl": "https://talent.lowes.com/us/en",
+    "discoveredAt": "2026-05-24T08:33:35.589Z",
+    "status": "unsupported",
+    "warnings": [
+      "No supported Greenhouse, Lever, Ashby, or Workday board link found."
+    ]
+  },
+  {
+    "id": "discovered-workday-johnson-johnson-jj-jj",
+    "company": "Johnson & Johnson",
+    "source": "workday",
+    "workday": {
+      "host": "https://jj.wd5.myworkdayjobs.com",
+      "tenant": "jj",
+      "site": "JJ",
+      "searchText": "intern",
+      "searchTerms": [
+        "intern",
+        "co-op",
+        "university",
+        "new grad",
+        "early career",
+        "graduate",
+        "analyst"
+      ],
+      "pageLimit": 20,
+      "maxPages": 3
+    },
+    "category": "manufacturing",
+    "sponsorshipFriendly": "medium",
+    "competitionLevel": "high",
+    "discoveredFromUrl": "https://jj.wd5.myworkdayjobs.com/JJ",
+    "discoveredAt": "2026-05-24T08:33:35.589Z",
+    "status": "supported",
+    "warnings": []
+  },
+  {
+    "id": "failed-tesla",
+    "company": "Tesla",
+    "source": "greenhouse",
+    "category": "manufacturing",
+    "sponsorshipFriendly": "medium",
+    "competitionLevel": "high",
+    "discoveredFromUrl": "https://www.tesla.com/careers",
+    "discoveredAt": "2026-05-24T08:33:35.589Z",
+    "status": "failed",
+    "warnings": [
+      "https://www.tesla.com/careers returned 403"
+    ]
+  },
+  {
+    "id": "unsupported-fedex",
+    "company": "FedEx",
+    "source": "greenhouse",
+    "category": "logistics",
+    "sponsorshipFriendly": "medium",
+    "competitionLevel": "medium",
+    "discoveredFromUrl": "https://careers.fedex.com/",
+    "discoveredAt": "2026-05-24T08:33:35.589Z",
+    "status": "unsupported",
+    "warnings": [
+      "No supported Greenhouse, Lever, Ashby, or Workday board link found."
+    ]
+  },
+  {
+    "id": "unsupported-humana",
+    "company": "Humana",
+    "source": "greenhouse",
+    "category": "operations",
+    "sponsorshipFriendly": "medium",
+    "competitionLevel": "medium",
+    "discoveredFromUrl": "https://careers.humana.com/us/en",
+    "discoveredAt": "2026-05-24T08:33:35.589Z",
+    "status": "unsupported",
+    "warnings": [
+      "No supported Greenhouse, Lever, Ashby, or Workday board link found."
+    ]
+  },
+  {
+    "id": "failed-wells-fargo",
+    "company": "Wells Fargo",
+    "source": "greenhouse",
+    "category": "finance",
+    "sponsorshipFriendly": "medium",
+    "competitionLevel": "high",
+    "discoveredFromUrl": "https://www.wellsfargojobs.com",
+    "discoveredAt": "2026-05-24T08:33:35.589Z",
+    "status": "failed",
+    "warnings": [
+      "https://www.wellsfargojobs.com returned 403"
+    ]
+  },
+  {
+    "id": "unsupported-state-farm",
+    "company": "State Farm",
+    "source": "greenhouse",
+    "category": "finance",
+    "sponsorshipFriendly": "medium",
+    "competitionLevel": "medium",
+    "discoveredFromUrl": "https://jobs.statefarm.com/main/",
+    "discoveredAt": "2026-05-24T08:33:35.589Z",
+    "status": "unsupported",
+    "warnings": [
+      "No supported Greenhouse, Lever, Ashby, or Workday board link found."
+    ]
+  },
+  {
+    "id": "unsupported-ups",
+    "company": "UPS",
+    "source": "greenhouse",
+    "category": "logistics",
+    "sponsorshipFriendly": "medium",
+    "competitionLevel": "medium",
+    "discoveredFromUrl": "https://www.jobs-ups.com/us/en",
+    "discoveredAt": "2026-05-24T08:33:35.589Z",
+    "status": "unsupported",
+    "warnings": [
+      "No supported Greenhouse, Lever, Ashby, or Workday board link found."
+    ]
+  },
+  {
+    "id": "unsupported-pepsico",
+    "company": "PepsiCo",
+    "source": "greenhouse",
+    "category": "manufacturing",
+    "sponsorshipFriendly": "medium",
+    "competitionLevel": "medium",
+    "discoveredFromUrl": "https://www.pepsicojobs.com/main/",
+    "discoveredAt": "2026-05-24T08:33:35.589Z",
+    "status": "unsupported",
+    "warnings": [
+      "No supported Greenhouse, Lever, Ashby, or Workday board link found."
+    ]
+  },
+  {
+    "id": "discovered-workday-intel-intel-external",
+    "company": "Intel",
+    "source": "workday",
+    "workday": {
+      "host": "https://intel.wd1.myworkdayjobs.com",
+      "tenant": "intel",
+      "site": "External",
+      "searchText": "intern",
+      "searchTerms": [
+        "intern",
+        "co-op",
+        "university",
+        "new grad",
+        "early career",
+        "graduate",
+        "analyst"
+      ],
+      "pageLimit": 20,
+      "maxPages": 3
+    },
+    "category": "tech",
+    "sponsorshipFriendly": "medium",
+    "competitionLevel": "high",
+    "discoveredFromUrl": "https://intel.wd1.myworkdayjobs.com/External/page/6042070b79e01001f04fa9b468070000",
+    "discoveredAt": "2026-05-24T08:33:35.589Z",
+    "status": "supported",
+    "warnings": []
+  },
+  {
+    "id": "unsupported-procter-gamble",
+    "company": "Procter & Gamble",
+    "source": "greenhouse",
+    "category": "manufacturing",
+    "sponsorshipFriendly": "medium",
+    "competitionLevel": "high",
+    "discoveredFromUrl": "https://www.pgcareers.com/us/en",
+    "discoveredAt": "2026-05-24T08:33:35.589Z",
+    "status": "unsupported",
+    "warnings": [
+      "No supported Greenhouse, Lever, Ashby, or Workday board link found."
+    ]
+  },
+  {
+    "id": "unsupported-ibm",
+    "company": "IBM",
+    "source": "greenhouse",
+    "category": "tech",
+    "sponsorshipFriendly": "medium",
+    "competitionLevel": "high",
+    "discoveredFromUrl": "https://www.ibm.com/careers",
+    "discoveredAt": "2026-05-24T08:33:35.589Z",
+    "status": "unsupported",
+    "warnings": [
+      "No supported Greenhouse, Lever, Ashby, or Workday board link found."
+    ]
+  },
+  {
+    "id": "unsupported-disney",
+    "company": "Disney",
+    "source": "greenhouse",
+    "category": "operations",
+    "sponsorshipFriendly": "medium",
+    "competitionLevel": "high",
+    "discoveredFromUrl": "https://www.disneycareers.com/en",
+    "discoveredAt": "2026-05-24T08:33:35.589Z",
+    "status": "unsupported",
+    "warnings": [
+      "No supported Greenhouse, Lever, Ashby, or Workday board link found."
+    ]
+  },
+  {
+    "id": "unsupported-cisco",
+    "company": "Cisco",
+    "source": "greenhouse",
+    "category": "tech",
+    "sponsorshipFriendly": "medium",
+    "competitionLevel": "high",
+    "discoveredFromUrl": "https://careers.cisco.com/global/en",
+    "discoveredAt": "2026-05-24T08:33:35.589Z",
+    "status": "unsupported",
+    "warnings": [
+      "No supported Greenhouse, Lever, Ashby, or Workday board link found."
+    ]
+  },
+  {
+    "id": "unsupported-oracle",
+    "company": "Oracle",
+    "source": "greenhouse",
+    "category": "tech",
+    "sponsorshipFriendly": "medium",
+    "competitionLevel": "high",
+    "discoveredFromUrl": "https://careers.oracle.com/en/sites/jobsearch",
+    "discoveredAt": "2026-05-24T08:33:35.589Z",
+    "status": "unsupported",
+    "warnings": [
+      "No supported Greenhouse, Lever, Ashby, or Workday board link found."
+    ]
+  },
+  {
+    "id": "failed-nike",
+    "company": "Nike",
+    "source": "greenhouse",
+    "category": "retail",
+    "sponsorshipFriendly": "medium",
+    "competitionLevel": "high",
+    "discoveredFromUrl": "https://nike.wd1.myworkdayjobs.com/nike",
+    "discoveredAt": "2026-05-24T08:33:35.589Z",
+    "status": "failed",
+    "warnings": [
+      "https://nike.wd1.myworkdayjobs.com/nike returned 404"
+    ]
+  },
+  {
+    "id": "failed-morgan-stanley",
+    "company": "Morgan Stanley",
+    "source": "greenhouse",
+    "category": "finance",
+    "sponsorshipFriendly": "medium",
+    "competitionLevel": "high",
+    "discoveredFromUrl": "https://www.morganstanley.com/people-opportunities/students-graduates",
+    "discoveredAt": "2026-05-24T08:33:35.589Z",
+    "status": "failed",
+    "warnings": [
+      "This operation was aborted"
+    ]
+  },
+  {
+    "id": "failed-goldman-sachs",
+    "company": "Goldman Sachs",
+    "source": "greenhouse",
+    "category": "finance",
+    "sponsorshipFriendly": "medium",
+    "competitionLevel": "high",
+    "discoveredFromUrl": "https://www.goldmansachs.com/careers",
+    "discoveredAt": "2026-05-24T08:33:35.589Z",
+    "status": "failed",
+    "warnings": [
+      "https://www.goldmansachs.com/careers returned 403"
+    ]
+  },
+  {
+    "id": "unsupported-lockheed-martin",
+    "company": "Lockheed Martin",
+    "source": "greenhouse",
+    "category": "manufacturing",
+    "sponsorshipFriendly": "medium",
+    "competitionLevel": "high",
+    "discoveredFromUrl": "https://www.lockheedmartin.com/en-us/careers/index.html",
+    "discoveredAt": "2026-05-24T08:33:35.589Z",
+    "status": "unsupported",
+    "warnings": [
+      "No supported Greenhouse, Lever, Ashby, or Workday board link found."
+    ]
+  },
+  {
+    "id": "discovered-workday-boeing-boeing-en-us",
+    "company": "Boeing",
+    "source": "workday",
+    "workday": {
+      "host": "https://boeing.wd1.myworkdayjobs.com",
+      "tenant": "boeing",
+      "site": "en-US",
+      "searchText": "intern",
+      "searchTerms": [
+        "intern",
+        "co-op",
+        "university",
+        "new grad",
+        "early career",
+        "graduate",
+        "analyst"
+      ],
+      "pageLimit": 20,
+      "maxPages": 3
+    },
+    "category": "manufacturing",
+    "sponsorshipFriendly": "medium",
+    "competitionLevel": "high",
+    "discoveredFromUrl": "https://boeing.wd1.myworkdayjobs.com/en-US/EXTERNAL_CAREERS/login",
+    "discoveredAt": "2026-05-24T08:33:35.589Z",
+    "status": "supported",
+    "warnings": []
+  },
+  {
+    "id": "failed-caterpillar",
+    "company": "Caterpillar",
+    "source": "greenhouse",
+    "category": "manufacturing",
+    "sponsorshipFriendly": "medium",
+    "competitionLevel": "medium",
+    "discoveredFromUrl": "https://careers.caterpillar.com",
+    "discoveredAt": "2026-05-24T08:33:35.589Z",
+    "status": "failed",
+    "warnings": [
+      "https://careers.caterpillar.com returned 403"
+    ]
+  },
+  {
+    "id": "unsupported-honeywell",
+    "company": "Honeywell",
+    "source": "greenhouse",
+    "category": "manufacturing",
+    "sponsorshipFriendly": "medium",
+    "competitionLevel": "high",
+    "discoveredFromUrl": "https://careers.honeywell.com/en/sites/Honeywell",
+    "discoveredAt": "2026-05-24T08:33:35.589Z",
+    "status": "unsupported",
+    "warnings": [
+      "No supported Greenhouse, Lever, Ashby, or Workday board link found."
+    ]
+  },
+  {
+    "id": "failed-rtx",
+    "company": "RTX",
+    "source": "greenhouse",
+    "category": "manufacturing",
+    "sponsorshipFriendly": "medium",
+    "competitionLevel": "high",
+    "discoveredFromUrl": "https://careers.rtx.com",
+    "discoveredAt": "2026-05-24T08:33:35.589Z",
+    "status": "failed",
+    "warnings": [
+      "https://careers.rtx.com returned 403"
+    ]
+  },
+  {
+    "id": "unsupported-deere",
+    "company": "John Deere",
+    "source": "greenhouse",
+    "category": "manufacturing",
+    "sponsorshipFriendly": "medium",
+    "competitionLevel": "medium",
+    "discoveredFromUrl": "https://about.deere.com/en-us/careers/",
+    "discoveredAt": "2026-05-24T08:33:35.589Z",
+    "status": "unsupported",
+    "warnings": [
+      "No supported Greenhouse, Lever, Ashby, or Workday board link found."
+    ]
+  },
+  {
+    "id": "unsupported-american-express",
+    "company": "American Express",
+    "source": "greenhouse",
+    "category": "finance",
+    "sponsorshipFriendly": "medium",
+    "competitionLevel": "high",
+    "discoveredFromUrl": "https://www.americanexpress.com/en-us/careers/",
+    "discoveredAt": "2026-05-24T08:33:35.589Z",
+    "status": "unsupported",
+    "warnings": [
+      "No supported Greenhouse, Lever, Ashby, or Workday board link found."
+    ]
+  },
+  {
+    "id": "unsupported-salesforce",
+    "company": "Salesforce",
+    "source": "greenhouse",
+    "category": "tech",
+    "sponsorshipFriendly": "medium",
+    "competitionLevel": "high",
+    "discoveredFromUrl": "https://www.salesforce.com/company/careers/?bc=DB",
+    "discoveredAt": "2026-05-24T08:33:35.589Z",
+    "status": "unsupported",
+    "warnings": [
+      "No supported Greenhouse, Lever, Ashby, or Workday board link found."
+    ]
   }
 ]

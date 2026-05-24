@@ -8,12 +8,16 @@ on:
         required: false
         type: string
   schedule:
-    - cron: "30 8 * * *"
+    - cron: "0 */6 * * *"
 
 jobs:
   scrape:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
 
     steps:
       - name: Check out repository
@@ -34,8 +38,10 @@ jobs:
         env:
           INGEST_ADMIN_TOKEN: ${{ secrets.INGEST_ADMIN_TOKEN }}
           STEALTH_APP_URL: ${{ secrets.STEALTH_APP_URL }}
-          SCRAPER_BATCH_SIZE: "25"
-          SCRAPER_LIMIT_PER_COMPANY: "60"
+          SCRAPER_BATCH_SIZE: "30"
+          SCRAPER_LIMIT_PER_COMPANY: "90"
+          SCRAPER_SHARD_INDEX: ${{ matrix.shard }}
+          SCRAPER_SHARD_TOTAL: "4"
         run: |
           COMPANY_ARG=""
           if [ -n "${{ inputs.company }}" ]; then
@@ -44,14 +50,18 @@ jobs:
 
           python scripts/job_scraper/run.py \
             $COMPANY_ARG \
+            --shard-index "$SCRAPER_SHARD_INDEX" \
+            --shard-total "$SCRAPER_SHARD_TOTAL" \
+            --batch-size "$SCRAPER_BATCH_SIZE" \
+            --limit-per-company "$SCRAPER_LIMIT_PER_COMPANY" \
             --post-url "$STEALTH_APP_URL/api/jobs/import-scraped" \
             --token "$INGEST_ADMIN_TOKEN" \
-            --output scraped-jobs.json
+            --output "scraped-jobs-shard-$SCRAPER_SHARD_INDEX.json"
 
       - name: Upload scraper payload
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: scraped-jobs
-          path: scraped-jobs.json
+          name: scraped-jobs-shard-${{ matrix.shard }}
+          path: scraped-jobs-shard-${{ matrix.shard }}.json
           if-no-files-found: ignore

@@ -1,6 +1,6 @@
 # Stealth
 
-Stealth is a full-stack-ready MVP for an AI Internship Radar. It helps students discover, score, and track internships/jobs based on resume uploads, skills, goals, and visa sponsorship needs.
+Stealth is a full-stack-ready MVP for an AI Internship Radar. It helps students discover, evaluate, and track internships/jobs based on resume uploads, role direction, degree fit, goals, and visa sponsorship needs.
 
 ## Stack
 
@@ -13,8 +13,8 @@ Stealth is a full-stack-ready MVP for an AI Internship Radar. It helps students 
 ## Features
 
 - Premium light-mode landing page
-- Personalized dashboard with resume-derived role lanes and list-based recommendations
-- Resume profile page with PDF/DOCX/TXT/MD upload, structural text parsing, OpenRouter-powered profile extraction, sponsorship preference, and search type preference
+- Personalized deterministic dashboard with resume-derived role lanes and list-based recommendations
+- Resume profile page with PDF/DOCX/TXT/MD upload, structural text parsing, Gemini-powered profile extraction, sponsorship preference, and search type preference
 - Job fit scoring from 0-100
 - Job detail pages with AI-assisted scoring, application strategy, sponsorship, competition, fit explanations, missing skills, resume keywords, and apply links
 - Saved jobs tracker with `saved`, `applied`, `interview`, `rejected`, and `offer` statuses
@@ -33,11 +33,10 @@ npm install
 Create `.env.local`:
 
 ```bash
-OPENROUTER_API_KEY=your_openrouter_key_here
-OPENROUTER_MODEL=nvidia/nemotron-3-nano-30b-a3b:free
-OPENROUTER_PROFILE_MODEL=nvidia/nemotron-3-nano-30b-a3b:free
-OPENROUTER_MATCH_MODEL=nvidia/nemotron-3-nano-30b-a3b:free
-OPENROUTER_FALLBACK_MODELS=openrouter/free
+GEMINI_API_KEY=your_gemini_api_key_here
+GEMINI_MODEL=gemini-3.5-flash
+GEMINI_PROFILE_MODEL=gemini-3.5-flash
+GEMINI_MATCH_MODEL=gemini-3.5-flash
 NEXT_PUBLIC_APP_URL=http://localhost:3000
 NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
@@ -45,11 +44,13 @@ SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
 CRON_SECRET=your_vercel_cron_secret
 INGEST_ADMIN_TOKEN=your_optional_manual_ingest_token
 SCRAPER_USER_AGENT=StealthJobRadar/1.0
-SCRAPER_BATCH_SIZE=25
-SCRAPER_LIMIT_PER_COMPANY=60
+SCRAPER_BATCH_SIZE=30
+SCRAPER_LIMIT_PER_COMPANY=90
+SCRAPER_SHARD_INDEX=0
+SCRAPER_SHARD_TOTAL=4
 ```
 
-`OPENROUTER_FALLBACK_MODELS` is optional. It accepts one model or a comma-separated list. Stealth tries these only if the primary task model fails, rate-limits, or returns malformed JSON.
+Gemini powers resume profile extraction and one-job compatibility analysis. Radar remains deterministic and does not call AI.
 
 Run the development server:
 
@@ -90,8 +91,9 @@ INGEST_ADMIN_TOKEN=your_internal_token
 ```
 
 Then call `POST /api/jobs/ingest` with `x-ingest-token`. Ingestion keeps up to 1000 active jobs, marks disappeared roles inactive after successful source refreshes, stores supported discovered ATS boards in `discovered_job_sources`, and records refresh/discovery history in `job_ingestion_runs` and `job_discovery_runs`.
+Scraper monitoring views are available in Supabase as `active_jobs_by_source`, `active_scraped_jobs_by_company`, `last_seen_scraped_jobs`, and `scraper_freshness_by_company`.
 
-Allowlisted company-careers scraping runs outside Vercel, normally in GitHub Actions, so Playwright does not burden Hobby functions. Add GitHub repository secrets:
+Allowlisted company-careers scraping runs outside Vercel, normally in GitHub Actions, so Playwright does not burden Hobby functions. The workflow runs every 6 hours across 4 shards, so each run handles a different slice of the allowlisted company set and posts normalized jobs back through Stealth. Add GitHub repository secrets:
 
 ```bash
 STEALTH_APP_URL=https://your-vercel-domain.vercel.app
@@ -106,10 +108,23 @@ python3 -m playwright install chromium
 python3 scripts/job_scraper/run.py --company Apple --output scraped-jobs.json
 ```
 
+Run one shard locally:
+
+```bash
+python3 scripts/job_scraper/run.py \
+  --shard-index 0 \
+  --shard-total 4 \
+  --batch-size 30 \
+  --limit-per-company 90 \
+  --output scraped-jobs-shard-0.json
+```
+
 Post scraped jobs into Supabase through Stealth:
 
 ```bash
 python3 scripts/job_scraper/run.py \
+  --shard-index 0 \
+  --shard-total 4 \
   --post-url "$NEXT_PUBLIC_APP_URL/api/jobs/import-scraped" \
   --token "$INGEST_ADMIN_TOKEN"
 ```
@@ -122,15 +137,15 @@ python3 scripts/job_scraper/run.py \
 - `data/ingested-jobs.json` - Generated local ingestion cache
 - `data/discovered-job-sources.json` - Generated local ATS discovery cache
 - `data/manual-jobs/` - Manual JSON job imports for demo control
-- `app/api/profile/extract/route.ts` - OpenRouter candidate profile extraction route
+- `app/api/profile/extract/route.ts` - Gemini candidate profile extraction route
 - `app/api/profile/route.ts` - Supabase candidate profile read/write route
 - `app/api/saved-jobs/route.ts` - Supabase saved job tracker route
 - `app/api/jobs/route.ts` - Normalized job catalog route
 - `app/api/jobs/ingest/route.ts` - Public source ingestion refresh route
 - `app/api/jobs/import-scraped/route.ts` - Secured import route for allowlisted scraper output
-- `app/api/jobs/score/route.ts` - OpenRouter job-detail scoring and application strategy route
+- `app/api/jobs/score/route.ts` - Gemini job-detail scoring and application strategy route
 - `lib/ai.ts` - Local fallback candidate profile extraction
-- `lib/openrouter.ts` - Shared deterministic OpenRouter JSON client with timeout and retry handling
+- `lib/gemini.ts` - Shared deterministic Gemini JSON client with timeout and retry handling
 - `lib/ai-versions.ts` - AI prompt/cache version constants
 - `lib/jobs.ts` - Single server-side job catalog access point
 - `lib/job-ingestion/` - Source connectors, registry, Fortune 100 ATS discovery, normalizers, validation, cache, and manual import support

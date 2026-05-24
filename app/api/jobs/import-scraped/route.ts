@@ -111,7 +111,10 @@ function normalizeScrapedInput(value: unknown): ScrapedJobInput | null {
     competitionLevel: normalizeCompetition(record.competitionLevel),
     skills: Array.isArray(record.skills) ? record.skills.filter((item): item is string => typeof item === "string") : undefined,
     scrapedAt: stringValue(record.scrapedAt) || undefined,
-    extractionMethod: record.extractionMethod === "playwright" ? "playwright" : "beautifulsoup"
+    extractionMethod: record.extractionMethod === "playwright" ? "playwright" : "beautifulsoup",
+    searchTerm: stringValue(record.searchTerm) || undefined,
+    listPage: typeof record.listPage === "number" ? Math.max(1, Math.floor(record.listPage)) : undefined,
+    listUrl: stringValue(record.listUrl) || undefined
   };
 }
 
