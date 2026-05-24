@@ -1,7 +1,7 @@
 {
   "crons": [
     {
-      "path": "/api/jobs/ingest",
+      "path": "/api/jobs/ingest?mode=full&batchSize=30",
       "schedule": "0 8 * * *"
     }
   ]

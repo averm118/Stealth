@@ -1,0 +1,472 @@
+[
+  {
+    "id": "unsupported-walmart",
+    "company": "Walmart",
+    "source": "greenhouse",
+    "category": "retail",
+    "sponsorshipFriendly": "medium",
+    "competitionLevel": "high",
+    "discoveredFromUrl": "https://careers.walmart.com/us/en/home",
+    "discoveredAt": "2026-05-23T05:36:26.409Z",
+    "status": "unsupported",
+    "warnings": [
+      "No supported Greenhouse, Lever, Ashby, or Workday board link found."
+    ]
+  },
+  {
+    "id": "unsupported-amazon",
+    "company": "Amazon",
+    "source": "greenhouse",
+    "category": "tech",
+    "sponsorshipFriendly": "medium",
+    "competitionLevel": "high",
+    "discoveredFromUrl": "https://www.amazon.jobs/en/",
+    "discoveredAt": "2026-05-23T05:36:26.409Z",
+    "status": "unsupported",
+    "warnings": [
+      "No supported Greenhouse, Lever, Ashby, or Workday board link found."
+    ]
+  },
+  {
+    "id": "unsupported-apple",
+    "company": "Apple",
+    "source": "greenhouse",
+    "category": "tech",
+    "sponsorshipFriendly": "medium",
+    "competitionLevel": "high",
+    "discoveredFromUrl": "https://www.apple.com/careers/us/",
+    "discoveredAt": "2026-05-23T05:36:26.409Z",
+    "status": "unsupported",
+    "warnings": [
+      "No supported Greenhouse, Lever, Ashby, or Workday board link found."
+    ]
+  },
+  {
+    "id": "unsupported-cvs-health",
+    "company": "CVS Health",
+    "source": "greenhouse",
+    "category": "retail",
+    "sponsorshipFriendly": "medium",
+    "competitionLevel": "medium",
+    "discoveredFromUrl": "https://jobs.cvshealth.com/us/en",
+    "discoveredAt": "2026-05-23T05:36:26.409Z",
+    "status": "unsupported",
+    "warnings": [
+      "No supported Greenhouse, Lever, Ashby, or Workday board link found."
+    ]
+  },
+  {
+    "id": "unsupported-unitedhealth-group",
+    "company": "UnitedHealth Group",
+    "source": "greenhouse",
+    "category": "operations",
+    "sponsorshipFriendly": "medium",
+    "competitionLevel": "high",
+    "discoveredFromUrl": "https://careers.unitedhealthgroup.com/",
+    "discoveredAt": "2026-05-23T05:36:26.409Z",
+    "status": "unsupported",
+    "warnings": [
+      "No supported Greenhouse, Lever, Ashby, or Workday board link found."
+    ]
+  },
+  {
+    "id": "unsupported-exxonmobil",
+    "company": "ExxonMobil",
+    "source": "greenhouse",
+    "category": "operations",
+    "sponsorshipFriendly": "medium",
+    "competitionLevel": "high",
+    "discoveredFromUrl": "https://jobs.exxonmobil.com/",
+    "discoveredAt": "2026-05-23T05:36:26.409Z",
+    "status": "unsupported",
+    "warnings": [
+      "No supported Greenhouse, Lever, Ashby, or Workday board link found."
+    ]
+  },
+  {
+    "id": "unsupported-alphabet",
+    "company": "Alphabet",
+    "source": "greenhouse",
+    "category": "tech",
+    "sponsorshipFriendly": "medium",
+    "competitionLevel": "high",
+    "discoveredFromUrl": "https://www.google.com/about/careers/applications/",
+    "discoveredAt": "2026-05-23T05:36:26.409Z",
+    "status": "unsupported",
+    "warnings": [
+      "No supported Greenhouse, Lever, Ashby, or Workday board link found."
+    ]
+  },
+  {
+    "id": "unsupported-mckesson",
+    "company": "McKesson",
+    "source": "greenhouse",
+    "category": "logistics",
+    "sponsorshipFriendly": "medium",
+    "competitionLevel": "medium",
+    "discoveredFromUrl": "https://careers.mckesson.com/en",
+    "discoveredAt": "2026-05-23T05:36:26.409Z",
+    "status": "unsupported",
+    "warnings": [
+      "No supported Greenhouse, Lever, Ashby, or Workday board link found."
+    ]
+  },
+  {
+    "id": "unsupported-cencora",
+    "company": "Cencora",
+    "source": "greenhouse",
+    "category": "logistics",
+    "sponsorshipFriendly": "medium",
+    "competitionLevel": "medium",
+    "discoveredFromUrl": "https://careers.cencora.com/us/en",
+    "discoveredAt": "2026-05-23T05:36:26.409Z",
+    "status": "unsupported",
+    "warnings": [
+      "No supported Greenhouse, Lever, Ashby, or Workday board link found."
+    ]
+  },
+  {
+    "id": "failed-costco",
+    "company": "Costco",
+    "source": "greenhouse",
+    "category": "retail",
+    "sponsorshipFriendly": "low",
+    "competitionLevel": "medium",
+    "discoveredFromUrl": "https://www.costco.com/jobs.html",
+    "discoveredAt": "2026-05-23T05:36:26.409Z",
+    "status": "failed",
+    "warnings": [
+      "This operation was aborted"
+    ]
+  },
+  {
+    "id": "unsupported-jpmorgan-chase",
+    "company": "JPMorgan Chase",
+    "source": "greenhouse",
+    "category": "finance",
+    "sponsorshipFriendly": "medium",
+    "competitionLevel": "high",
+    "discoveredFromUrl": "https://www.jpmorganchase.com/careers?redirect=careers_jpm",
+    "discoveredAt": "2026-05-23T05:36:26.409Z",
+    "status": "unsupported",
+    "warnings": [
+      "No supported Greenhouse, Lever, Ashby, or Workday board link found."
+    ]
+  },
+  {
+    "id": "unsupported-microsoft",
+    "company": "Microsoft",
+    "source": "greenhouse",
+    "category": "tech",
+    "sponsorshipFriendly": "high",
+    "competitionLevel": "high",
+    "discoveredFromUrl": "https://apply.careers.microsoft.com/careers",
+    "discoveredAt": "2026-05-23T05:36:26.409Z",
+    "status": "unsupported",
+    "warnings": [
+      "No supported Greenhouse, Lever, Ashby, or Workday board link found."
+    ]
+  },
+  {
+    "id": "unsupported-cardinal-health",
+    "company": "Cardinal Health",
+    "source": "greenhouse",
+    "category": "logistics",
+    "sponsorshipFriendly": "medium",
+    "competitionLevel": "medium",
+    "discoveredFromUrl": "https://jobs.cardinalhealth.com/",
+    "discoveredAt": "2026-05-23T05:36:26.409Z",
+    "status": "unsupported",
+    "warnings": [
+      "No supported Greenhouse, Lever, Ashby, or Workday board link found."
+    ]
+  },
+  {
+    "id": "unsupported-chevron",
+    "company": "Chevron",
+    "source": "greenhouse",
+    "category": "operations",
+    "sponsorshipFriendly": "medium",
+    "competitionLevel": "high",
+    "discoveredFromUrl": "https://careers.chevron.com/",
+    "discoveredAt": "2026-05-23T05:36:26.409Z",
+    "status": "unsupported",
+    "warnings": [
+      "No supported Greenhouse, Lever, Ashby, or Workday board link found."
+    ]
+  },
+  {
+    "id": "discovered-workday-cigna-cigna-cignacareers",
+    "company": "Cigna",
+    "source": "workday",
+    "workday": {
+      "host": "https://cigna.wd5.myworkdayjobs.com",
+      "tenant": "cigna",
+      "site": "cignacareers",
+      "searchText": "intern",
+      "pageLimit": 20,
+      "maxPages": 3
+    },
+    "category": "operations",
+    "sponsorshipFriendly": "medium",
+    "competitionLevel": "medium",
+    "discoveredFromUrl": "https://cigna.wd5.myworkdayjobs.com/cignacareers",
+    "discoveredAt": "2026-05-23T05:36:26.409Z",
+    "status": "supported",
+    "warnings": []
+  },
+  {
+    "id": "failed-ford",
+    "company": "Ford",
+    "source": "greenhouse",
+    "category": "manufacturing",
+    "sponsorshipFriendly": "medium",
+    "competitionLevel": "high",
+    "discoveredFromUrl": "https://corporate.ford.com/careers.html",
+    "discoveredAt": "2026-05-23T05:36:26.409Z",
+    "status": "failed",
+    "warnings": [
+      "This operation was aborted"
+    ]
+  },
+  {
+    "id": "discovered-workday-bank-of-america-ghr-en-us",
+    "company": "Bank of America",
+    "source": "workday",
+    "workday": {
+      "host": "https://ghr.wd1.myworkdayjobs.com",
+      "tenant": "ghr",
+      "site": "en-us",
+      "searchText": "intern",
+      "pageLimit": 20,
+      "maxPages": 3
+    },
+    "category": "finance",
+    "sponsorshipFriendly": "medium",
+    "competitionLevel": "high",
+    "discoveredFromUrl": "https://ghr.wd1.myworkdayjobs.com/en-us/lateral-us/login",
+    "discoveredAt": "2026-05-23T05:36:26.409Z",
+    "status": "supported",
+    "warnings": []
+  },
+  {
+    "id": "failed-general-motors",
+    "company": "General Motors",
+    "source": "greenhouse",
+    "category": "manufacturing",
+    "sponsorshipFriendly": "medium",
+    "competitionLevel": "high",
+    "discoveredFromUrl": "https://generalmotors.wd5.myworkdayjobs.com/General_Motors",
+    "discoveredAt": "2026-05-23T05:36:26.409Z",
+    "status": "failed",
+    "warnings": [
+      "https://generalmotors.wd5.myworkdayjobs.com/General_Motors returned 404"
+    ]
+  },
+  {
+    "id": "discovered-workday-elevance-health-elevancehealth-en-us",
+    "company": "Elevance Health",
+    "source": "workday",
+    "workday": {
+      "host": "https://elevancehealth.wd1.myworkdayjobs.com",
+      "tenant": "elevancehealth",
+      "site": "en-US",
+      "searchText": "intern",
+      "pageLimit": 20,
+      "maxPages": 3
+    },
+    "category": "operations",
+    "sponsorshipFriendly": "medium",
+    "competitionLevel": "medium",
+    "discoveredFromUrl": "https://elevancehealth.wd1.myworkdayjobs.com/en-US/ANT/login?redirect=%2Fen-US%2FANT%2FuserHome",
+    "discoveredAt": "2026-05-23T05:36:26.409Z",
+    "status": "supported",
+    "warnings": []
+  },
+  {
+    "id": "discovered-workday-elevance-health-elevancehealth-ant",
+    "company": "Elevance Health",
+    "source": "workday",
+    "workday": {
+      "host": "https://elevancehealth.wd1.myworkdayjobs.com",
+      "tenant": "elevancehealth",
+      "site": "ANT",
+      "searchText": "intern",
+      "pageLimit": 20,
+      "maxPages": 3
+    },
+    "category": "operations",
+    "sponsorshipFriendly": "medium",
+    "competitionLevel": "medium",
+    "discoveredFromUrl": "https://elevancehealth.wd1.myworkdayjobs.com/ANT/page/1fa0eacc075e100103cc9ba0ba830000/",
+    "discoveredAt": "2026-05-23T05:36:26.409Z",
+    "status": "supported",
+    "warnings": []
+  },
+  {
+    "id": "unsupported-citigroup",
+    "company": "Citigroup",
+    "source": "greenhouse",
+    "category": "finance",
+    "sponsorshipFriendly": "medium",
+    "competitionLevel": "high",
+    "discoveredFromUrl": "https://jobs.citi.com/",
+    "discoveredAt": "2026-05-23T05:36:26.409Z",
+    "status": "unsupported",
+    "warnings": [
+      "No supported Greenhouse, Lever, Ashby, or Workday board link found."
+    ]
+  },
+  {
+    "id": "unsupported-meta",
+    "company": "Meta",
+    "source": "greenhouse",
+    "category": "tech",
+    "sponsorshipFriendly": "medium",
+    "competitionLevel": "high",
+    "discoveredFromUrl": "https://www.metacareers.com/",
+    "discoveredAt": "2026-05-23T05:36:26.409Z",
+    "status": "unsupported",
+    "warnings": [
+      "No supported Greenhouse, Lever, Ashby, or Workday board link found."
+    ]
+  },
+  {
+    "id": "failed-centene",
+    "company": "Centene",
+    "source": "greenhouse",
+    "category": "operations",
+    "sponsorshipFriendly": "medium",
+    "competitionLevel": "medium",
+    "discoveredFromUrl": "https://jobs.centene.com",
+    "discoveredAt": "2026-05-23T05:36:26.409Z",
+    "status": "failed",
+    "warnings": [
+      "https://jobs.centene.com returned 403"
+    ]
+  },
+  {
+    "id": "discovered-workday-home-depot-homedepot-careerdepot",
+    "company": "The Home Depot",
+    "source": "workday",
+    "workday": {
+      "host": "https://homedepot.wd5.myworkdayjobs.com",
+      "tenant": "homedepot",
+      "site": "CareerDepot",
+      "searchText": "intern",
+      "pageLimit": 20,
+      "maxPages": 3
+    },
+    "category": "retail",
+    "sponsorshipFriendly": "medium",
+    "competitionLevel": "medium",
+    "discoveredFromUrl": "https://homedepot.wd5.myworkdayjobs.com/CareerDepot/login",
+    "discoveredAt": "2026-05-23T05:36:26.409Z",
+    "status": "supported",
+    "warnings": []
+  },
+  {
+    "id": "failed-marathon-petroleum",
+    "company": "Marathon Petroleum",
+    "source": "greenhouse",
+    "category": "operations",
+    "sponsorshipFriendly": "medium",
+    "competitionLevel": "medium",
+    "discoveredFromUrl": "https://www.marathonpetroleum.com/Careers",
+    "discoveredAt": "2026-05-23T05:36:26.409Z",
+    "status": "failed",
+    "warnings": [
+      "https://www.marathonpetroleum.com/Careers returned 403"
+    ]
+  },
+  {
+    "id": "unsupported-kroger",
+    "company": "Kroger",
+    "source": "greenhouse",
+    "category": "retail",
+    "sponsorshipFriendly": "medium",
+    "competitionLevel": "medium",
+    "discoveredFromUrl": "https://www.krogerfamilycareers.com/en/sites/CX_2001",
+    "discoveredAt": "2026-05-23T05:36:26.409Z",
+    "status": "unsupported",
+    "warnings": [
+      "No supported Greenhouse, Lever, Ashby, or Workday board link found."
+    ]
+  },
+  {
+    "id": "unsupported-phillips-66",
+    "company": "Phillips 66",
+    "source": "greenhouse",
+    "category": "operations",
+    "sponsorshipFriendly": "medium",
+    "competitionLevel": "medium",
+    "discoveredFromUrl": "https://www.phillips66.com/careers/",
+    "discoveredAt": "2026-05-23T05:36:26.409Z",
+    "status": "unsupported",
+    "warnings": [
+      "No supported Greenhouse, Lever, Ashby, or Workday board link found."
+    ]
+  },
+  {
+    "id": "unsupported-walgreens",
+    "company": "Walgreens",
+    "source": "greenhouse",
+    "category": "retail",
+    "sponsorshipFriendly": "medium",
+    "competitionLevel": "medium",
+    "discoveredFromUrl": "https://jobs.walgreens.com/en",
+    "discoveredAt": "2026-05-23T05:36:26.409Z",
+    "status": "unsupported",
+    "warnings": [
+      "No supported Greenhouse, Lever, Ashby, or Workday board link found."
+    ]
+  },
+  {
+    "id": "unsupported-valero",
+    "company": "Valero",
+    "source": "greenhouse",
+    "category": "operations",
+    "sponsorshipFriendly": "medium",
+    "competitionLevel": "medium",
+    "discoveredFromUrl": "https://www.valero.com/careers",
+    "discoveredAt": "2026-05-23T05:36:26.409Z",
+    "status": "unsupported",
+    "warnings": [
+      "No supported Greenhouse, Lever, Ashby, or Workday board link found."
+    ]
+  },
+  {
+    "id": "failed-dell",
+    "company": "Dell Technologies",
+    "source": "greenhouse",
+    "category": "tech",
+    "sponsorshipFriendly": "medium",
+    "competitionLevel": "high",
+    "discoveredFromUrl": "https://jobs.dell.com",
+    "discoveredAt": "2026-05-23T05:36:26.409Z",
+    "status": "failed",
+    "warnings": [
+      "This operation was aborted"
+    ]
+  },
+  {
+    "id": "discovered-workday-target-target-targetcareers",
+    "company": "Target",
+    "source": "workday",
+    "workday": {
+      "host": "https://target.wd5.myworkdayjobs.com",
+      "tenant": "target",
+      "site": "targetcareers",
+      "searchText": "intern",
+      "pageLimit": 20,
+      "maxPages": 3
+    },
+    "category": "retail",
+    "sponsorshipFriendly": "medium",
+    "competitionLevel": "medium",
+    "discoveredFromUrl": "https://target.wd5.myworkdayjobs.com/targetcareers",
+    "discoveredAt": "2026-05-23T05:36:26.409Z",
+    "status": "supported",
+    "warnings": []
+  }
+]

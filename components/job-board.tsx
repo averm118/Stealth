@@ -1,15 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { Bookmark, CheckCircle2, Clock3, ExternalLink, Filter, Search, ShieldCheck, Sparkles } from "lucide-react";
+import { Bookmark, ChevronDown, ExternalLink, Loader2, RefreshCw, Search, ShieldCheck, Sparkles } from "lucide-react";
 import { motion } from "framer-motion";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useAppState } from "@/components/app-state";
+import { Reveal, Stagger, StaggerItem } from "@/components/motion-primitives";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Reveal, Stagger, StaggerItem } from "@/components/motion-primitives";
-import { scoreJob } from "@/lib/scoring";
+import { DASHBOARD_MATCH_VERSION } from "@/lib/ai-versions";
+import { stableTextHash } from "@/lib/ai-text";
+import { getCompanyInitials, getCompanyLogoUrls } from "@/lib/company-logos";
 import {
   getJobAlignmentForDirections,
   getProfileRoleDirectionLabel,
@@ -19,15 +21,7 @@ import {
   type RoleDirection
 } from "@/lib/role-taxonomy";
 import { cn, formatDate } from "@/lib/utils";
-import type { Job, LookingFor, MatchResult, SponsorshipFriendliness, WorkType } from "@/lib/types";
-
-type ScoredJob = {
-  job: Job;
-  match: MatchResult;
-  roleAffinity: number;
-  roleTier: "core" | "adjacent" | "weak" | "unrelated";
-  recencyScore: number;
-};
+import type { AiDashboardJobMatch, CandidateProfile, Job, LookingFor, SignalConfidence } from "@/lib/types";
 
 type CatalogMetadata = {
   count: number;
@@ -40,6 +34,20 @@ type RoleLane = {
   categoryIds: RoleCategoryId[];
 };
 
+type FilteredJob = {
+  job: Job;
+  roleAffinity: number;
+  roleTier: "core" | "adjacent" | "weak" | "unrelated";
+  recencyScore: number;
+};
+
+type RankedJob = {
+  job: Job;
+  aiMatch: AiDashboardJobMatch;
+};
+
+const maxAiReviewJobs = 200;
+
 const fallbackLanes: RoleLane[] = [
   { id: "supply-chain", label: "Supply Chain", categoryIds: ["supply-chain"] },
   { id: "operations", label: "Operations", categoryIds: ["operations"] },
@@ -49,21 +57,27 @@ const fallbackLanes: RoleLane[] = [
   { id: "software", label: "Software Engineering", categoryIds: ["software"] }
 ];
 
-const workTypeOptions: Array<"all" | WorkType> = ["all", "Remote", "Hybrid", "On-site"];
-const sponsorshipOptions: Array<"all" | SponsorshipFriendliness> = ["all", "high", "medium", "low", "unknown"];
-const recencyOptions = [
-  { label: "Any time", value: "all" },
-  { label: "Last 30 days", value: "30" },
-  { label: "Last 7 days", value: "7" }
+type ViewFilter = "all" | "remote" | "hybrid" | "onsite" | "sponsor-friendly" | "fresh-week" | "fresh-month";
+
+const viewFilterOptions: Array<{ label: string; value: ViewFilter }> = [
+  { label: "Best available", value: "all" },
+  { label: "Remote only", value: "remote" },
+  { label: "Hybrid only", value: "hybrid" },
+  { label: "On-site only", value: "onsite" },
+  { label: "Sponsor-friendly", value: "sponsor-friendly" },
+  { label: "Fresh this week", value: "fresh-week" },
+  { label: "Fresh this month", value: "fresh-month" }
 ];
 
 export function JobBoard({ jobs, metadata }: Readonly<{ jobs: Job[]; metadata: CatalogMetadata }>) {
   const { profile, savedJobs, setJobStatus } = useAppState();
   const [query, setQuery] = useState("");
   const [selectedLaneId, setSelectedLaneId] = useState("resume-fit");
-  const [workType, setWorkType] = useState<(typeof workTypeOptions)[number]>("all");
-  const [sponsorship, setSponsorship] = useState<(typeof sponsorshipOptions)[number]>("all");
-  const [recency, setRecency] = useState("all");
+  const [viewFilter, setViewFilter] = useState<ViewFilter>("all");
+  const [aiMatches, setAiMatches] = useState<AiDashboardJobMatch[]>([]);
+  const [isAiRanking, setIsAiRanking] = useState(false);
+  const [aiRankError, setAiRankError] = useState("");
+  const [refreshIndex, setRefreshIndex] = useState(0);
 
   const roleDirections = useMemo(() => getProfileRoleDirections(profile), [profile]);
   const activeDirectionLabel = useMemo(() => getProfileRoleDirectionLabel(profile), [profile]);
@@ -77,117 +91,217 @@ export function JobBoard({ jobs, metadata }: Readonly<{ jobs: Job[]; metadata: C
         ? resumeLane
         : lanes.find((lane) => lane.id === selectedLaneId) ?? resumeLane;
   const activeLaneMode = selectedLaneId === "resume-fit" ? "resume-fit" : selectedLaneId === "all" ? "all" : "role-lane";
+  const roleFilterOptions = useMemo(
+    () => [
+      { label: `Resume fit: ${resumeLane.label}`, value: "resume-fit" },
+      ...lanes.map((lane) => ({ label: lane.label, value: lane.id })),
+      { label: "All roles", value: "all" }
+    ],
+    [lanes, resumeLane.label]
+  );
 
-  const scoredJobs = useMemo(() => {
+  const filteredJobs = useMemo(() => {
     return candidateJobs
       .map((job) => {
         const alignment = getRoleAlignmentForLane(job, activeLane, roleDirections);
         return {
           job,
-          match: scoreJob(job, profile),
           roleAffinity: getRoleAffinity(alignment),
           roleTier: alignment.tier,
           recencyScore: getRecencyScore(job.postedDate)
         };
       })
       .filter((item) => shouldShowJobForLane(item.job, item.roleTier, activeLane, activeLaneMode))
-      .filter(({ job }) => workType === "all" || job.workType === workType)
-      .filter(({ job }) => sponsorship === "all" || job.sponsorshipFriendly === sponsorship)
-      .filter(({ job }) => matchesRecency(job.postedDate, recency))
+      .filter(({ job }) => matchesViewFilter(job, viewFilter))
       .filter(({ job }) => matchesQuery(job, query))
-      .sort((a, b) => getTierRank(b.roleTier) - getTierRank(a.roleTier) || b.roleAffinity - a.roleAffinity || b.match.score - a.match.score || b.recencyScore - a.recencyScore);
-  }, [activeLane, activeLaneMode, candidateJobs, profile, query, recency, roleDirections, sponsorship, workType]);
+      .sort((a, b) => b.recencyScore - a.recencyScore || b.roleAffinity - a.roleAffinity);
+  }, [activeLane, activeLaneMode, candidateJobs, query, roleDirections, viewFilter]);
 
-  const applyNow = scoredJobs.filter(({ match, roleTier }) => match.score >= 78 && (roleTier === "core" || roleTier === "adjacent")).slice(0, 12);
-  const strongMatches = scoredJobs
-    .filter(({ job }) => !applyNow.some((item) => item.job.id === job.id))
-    .filter(({ match, roleTier }) => match.score >= 62 && (roleTier === "core" || roleTier === "adjacent"))
-    .slice(0, 18);
-  const exploreNext = scoredJobs
-    .filter(({ job }) => !applyNow.some((item) => item.job.id === job.id) && !strongMatches.some((item) => item.job.id === job.id))
-    .slice(0, 24);
-  const sponsorFriendlyCount = scoredJobs.filter(({ job }) => job.sponsorshipFriendly === "high" || job.sponsorshipFriendly === "medium").length;
-  const filtersActive = Boolean(query || selectedLaneId !== "resume-fit" || workType !== "all" || sponsorship !== "all" || recency !== "all");
+  const reviewJobs = useMemo(() => filteredJobs.slice(0, maxAiReviewJobs), [filteredJobs]);
+  const reviewJobIds = useMemo(() => reviewJobs.map(({ job }) => job.id), [reviewJobs]);
+  const reviewedJobMap = useMemo(() => new Map(reviewJobs.map(({ job }) => [job.id, job])), [reviewJobs]);
+  const filteredJobSetHash = useMemo(() => stableTextHash(filteredJobs.map(({ job }) => job.id).join("|")), [filteredJobs]);
+  const filterSignature = useMemo(
+    () =>
+      stableTextHash(
+        JSON.stringify({
+          selectedLaneId,
+          activeLane: activeLane?.label ?? "all",
+          query: query.trim().toLowerCase(),
+          viewFilter
+        })
+      ),
+    [activeLane?.label, query, selectedLaneId, viewFilter]
+  );
+  const aiCacheKey = useMemo(() => {
+    if (!reviewJobIds.length) return "";
+    return [
+      "stealth.aiOnlyRadar",
+      DASHBOARD_MATCH_VERSION,
+      hashProfileForDashboard(profile),
+      profile.lookingFor,
+      filterSignature,
+      filteredJobSetHash
+    ].join(".");
+  }, [filterSignature, filteredJobSetHash, profile, reviewJobIds.length]);
+
+  useEffect(() => {
+    if (!reviewJobIds.length || !aiCacheKey) {
+      setAiMatches([]);
+      setIsAiRanking(false);
+      setAiRankError("");
+      return;
+    }
+
+    const cached = readCachedDashboardMatches(aiCacheKey, reviewJobIds);
+    if (cached) {
+      setAiMatches(cached);
+      setIsAiRanking(false);
+      setAiRankError("");
+      return;
+    }
+
+    const controller = new AbortController();
+    let cancelled = false;
+
+    setIsAiRanking(true);
+    setAiRankError("");
+    setAiMatches([]);
+
+    fetch("/api/jobs/rank", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profile, jobIds: reviewJobIds }),
+      signal: controller.signal
+    })
+      .then(async (response) => {
+        const result = (await response.json()) as { matches?: AiDashboardJobMatch[]; error?: string };
+        if (!response.ok) throw new Error(result.error || "AI ranking could not complete.");
+        return sanitizeDashboardMatches(result.matches, reviewJobIds);
+      })
+      .then((matches) => {
+        if (cancelled) return;
+        setAiMatches(matches);
+        localStorage.setItem(aiCacheKey, JSON.stringify(matches));
+      })
+      .catch((error) => {
+        if (cancelled || error instanceof DOMException) return;
+        setAiRankError(error instanceof Error ? error.message : "AI ranking could not complete.");
+      })
+      .finally(() => {
+        if (!cancelled) setIsAiRanking(false);
+      });
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [aiCacheKey, profile, refreshIndex, reviewJobIds]);
+
+  const rankedJobs = useMemo(() => {
+    return aiMatches
+      .map((aiMatch) => {
+        const job = reviewedJobMap.get(aiMatch.jobId);
+        return job ? { job, aiMatch } : null;
+      })
+      .filter((item): item is RankedJob => Boolean(item));
+  }, [aiMatches, reviewedJobMap]);
+
+  const sponsorFriendlyCount = filteredJobs.filter(({ job }) => job.sponsorshipFriendly === "high" || job.sponsorshipFriendly === "medium").length;
+  const filtersActive = Boolean(query || selectedLaneId !== "resume-fit" || viewFilter !== "all");
+  const reviewLimitApplied = filteredJobs.length > reviewJobs.length;
+  const statusText = getRadarStatusText(isAiRanking, aiRankError, rankedJobs.length, reviewJobs.length, reviewLimitApplied);
+
+  function rerunRadar() {
+    if (aiCacheKey) localStorage.removeItem(aiCacheKey);
+    setRefreshIndex((value) => value + 1);
+  }
 
   return (
     <section className="space-y-5">
       <Reveal>
-        <Card className="p-7">
-          <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
-            <div>
-              <p className="text-sm font-medium text-[#5661d8]">Personal radar</p>
+        <Card className="overflow-hidden p-0">
+          <div className="grid gap-0 lg:grid-cols-[1fr_360px]">
+            <div className="p-7 sm:p-8">
+              <p className="text-sm font-medium text-[#5661d8]">AI radar</p>
               <h1 className="mt-3 max-w-3xl text-5xl font-semibold tracking-[-0.055em] text-[#171b24]">
-                Roles your resume points toward.
+                Your best openings, after AI reads the fit.
               </h1>
               <p className="mt-3 max-w-2xl text-sm leading-6 text-[#687180]">
-                Public postings grouped by your extracted target roles, then ranked by fit, sponsorship, competition, and recency.
+                Stealth reviews current openings against your resume, search type, and sponsorship preference before showing matches.
               </p>
-              <div className="mt-4 inline-flex rounded-full border border-[#dfe3ff] bg-white/70 px-3 py-1 text-xs font-medium text-[#5661d8] shadow-sm">
-                Matched to: {selectedLaneId === "resume-fit" ? resumeLane.label : activeLane?.label ?? activeDirectionLabel}
+              <div className="mt-5 flex flex-wrap gap-2">
+                <StatusPill label={`Matched to ${selectedLaneId === "resume-fit" ? resumeLane.label : activeLane?.label ?? activeDirectionLabel}`} />
+                <StatusPill label={profile.lookingFor} />
+                <StatusPill label={statusText} active={isAiRanking} />
               </div>
             </div>
-            <div className="grid gap-3 text-sm sm:grid-cols-3 lg:min-w-[420px]">
-            <Metric label={profile.lookingFor} value={candidateJobs.length} />
-            <Metric label="Resume matches" value={scoredJobs.length} />
-            <Metric label="Sponsor-aware" value={sponsorFriendlyCount} />
+            <div className="border-t border-black/[0.06] bg-white/55 p-7 lg:border-l lg:border-t-0">
+              <p className="text-sm font-medium text-[#171b24]">Radar health</p>
+              <div className="mt-5 space-y-4">
+                <FocusLine label="Filtered openings" value={filteredJobs.length} />
+                <FocusLine label="AI reviewed" value={reviewJobs.length} />
+                <FocusLine label="Sponsor-aware" value={sponsorFriendlyCount} />
+                <FocusLine label="Last refresh" value={metadata.lastImportedAt ? formatDate(metadata.lastImportedAt) : "Local fallback"} />
+              </div>
             </div>
           </div>
         </Card>
       </Reveal>
 
       <Reveal>
-        <Card className="p-4 sm:p-5">
-          <div className="grid gap-3 lg:grid-cols-[1fr_auto_auto_auto] lg:items-center">
+        <Card className="p-3 sm:p-4">
+          <div className="grid gap-3 xl:grid-cols-[1fr_260px_220px] xl:items-center">
             <div className="relative">
               <Search className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[#9aa1ad]" size={17} />
-              <Input className="pl-10" placeholder="Search company, role, skill, or location" value={query} onChange={(event) => setQuery(event.target.value)} />
+              <Input
+                className="h-12 border-transparent bg-white/85 pl-10 shadow-[0_10px_30px_rgba(20,25,34,0.06)]"
+                placeholder="Search company, role, skill, or location"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+              />
             </div>
-            <FilterSelect label="Work type" value={workType} onChange={setWorkType} options={workTypeOptions.map((value) => ({ label: value === "all" ? "Any work type" : value, value }))} />
-            <FilterSelect label="Sponsorship" value={sponsorship} onChange={setSponsorship} options={sponsorshipOptions.map((value) => ({ label: value === "all" ? "Any sponsorship" : `${value} sponsorship`, value }))} />
-            <FilterSelect label="Posted" value={recency} onChange={setRecency} options={recencyOptions} />
-          </div>
-          <div className="mt-4 flex gap-2 overflow-x-auto pb-1">
-            <LaneButton
-              active={selectedLaneId === "resume-fit"}
-              label="Resume fit"
-              count={candidateJobs.filter((job) => getRoleAffinity(getRoleAlignmentForLane(job, resumeLane, roleDirections)) > 0).length}
-              onClick={() => setSelectedLaneId("resume-fit")}
-            />
-            {lanes.map((lane) => {
-              const count = candidateJobs.filter((job) => getRoleAffinity(getRoleAlignmentForLane(job, lane, roleDirections)) > 0).length;
-              return <LaneButton key={lane.id} active={selectedLaneId === lane.id} label={lane.label} count={count} onClick={() => setSelectedLaneId(lane.id)} />;
-            })}
-            <LaneButton active={selectedLaneId === "all"} label="All jobs" count={candidateJobs.length} onClick={() => setSelectedLaneId("all")} />
+            <FilterSelect label="Role focus" value={selectedLaneId} onChange={setSelectedLaneId} options={roleFilterOptions} />
+            <FilterSelect label="View" value={viewFilter} onChange={setViewFilter} options={viewFilterOptions} />
           </div>
         </Card>
       </Reveal>
 
-      <div className="grid gap-5 xl:grid-cols-[1fr_0.36fr]">
-        <div className="space-y-5">
-          <RadarSection icon={Sparkles} title="Apply now" description="Best role alignment with enough resume evidence to prioritize." jobs={applyNow} savedJobs={savedJobs} onSave={setJobStatus} emptyText={getEmptyText(filtersActive, "No urgent matches in this lane yet.", profile.lookingFor)} />
-          <RadarSection icon={CheckCircle2} title="Strong matches" description="Good options to queue after the top applications." jobs={strongMatches} savedJobs={savedJobs} onSave={setJobStatus} emptyText={getEmptyText(filtersActive, "No strong backup matches in this lane yet.", profile.lookingFor)} />
-          <RadarSection icon={Clock3} title="Explore next" description="Adjacent roles, stretch matches, and broader opportunities." jobs={exploreNext} savedJobs={savedJobs} onSave={setJobStatus} emptyText={getEmptyText(filtersActive, "No exploratory matches in this view.", profile.lookingFor)} />
+      <div className="grid gap-5 xl:grid-cols-[1fr_0.34fr]">
+        <div>
+          <TopMatchesPanel
+            jobs={rankedJobs}
+            savedJobs={savedJobs}
+            isLoading={isAiRanking}
+            error={aiRankError}
+            filtersActive={filtersActive}
+            lookingFor={profile.lookingFor}
+            reviewedCount={reviewJobs.length}
+            limitApplied={reviewLimitApplied}
+            onRetry={rerunRadar}
+            onSave={(jobId) => setJobStatus(jobId, "saved")}
+          />
         </div>
 
         <Reveal delay={0.1}>
           <aside className="sticky top-28 space-y-4 self-start">
             <Card className="p-6">
-              <p className="text-sm font-medium text-[#171b24]">Radar health</p>
-              <div className="mt-5 space-y-4">
-                <FocusLine label={selectedLaneId === "all" ? "Visible jobs" : "Resume matches"} value={scoredJobs.length} />
-                <FocusLine label="Looking for" value={profile.lookingFor} />
-                <FocusLine label="Saved roles" value={Object.keys(savedJobs).length} />
-                <FocusLine label="Last refresh" value={metadata.lastImportedAt ? formatDate(metadata.lastImportedAt) : "Local fallback"} />
-              </div>
-            </Card>
-            <Card className="p-6">
               <p className="flex items-center gap-2 text-sm font-medium text-[#171b24]">
                 <ShieldCheck size={16} className="text-[#5661d8]" />
-                Recommendation
+                Radar brief
               </p>
-              <p className="mt-3 text-sm leading-6 text-[#687180]">
-                Start with one role lane, save 8-12 strong roles, then use each job detail page for deeper AI compatibility.
+              <div className="mt-5 space-y-3">
+                <FocusLine label="Profile direction" value={selectedLaneId === "resume-fit" ? resumeLane.label : activeLane?.label ?? "All roles"} />
+                <FocusLine label="Search type" value={profile.lookingFor} />
+                <FocusLine label="Ranking" value="AI selected" />
+              </div>
+              <p className="mt-5 text-sm leading-6 text-[#687180]">
+                Save strong roles here, then open Details for the deeper compatibility score and application strategy.
               </p>
+              <Button className="mt-5 w-full" variant="secondary" onClick={rerunRadar} disabled={isAiRanking || !reviewJobIds.length}>
+                <RefreshCw size={15} />
+                Refresh AI radar
+              </Button>
             </Card>
           </aside>
         </Reveal>
@@ -196,65 +310,135 @@ export function JobBoard({ jobs, metadata }: Readonly<{ jobs: Job[]; metadata: C
   );
 }
 
-function RadarSection({
-  icon: Icon,
-  title,
-  description,
+function TopMatchesPanel({
   jobs,
   savedJobs,
-  onSave,
-  emptyText
+  isLoading,
+  error,
+  filtersActive,
+  lookingFor,
+  reviewedCount,
+  limitApplied,
+  onRetry,
+  onSave
 }: Readonly<{
-  icon: React.ElementType;
-  title: string;
-  description: string;
-  jobs: ScoredJob[];
+  jobs: RankedJob[];
   savedJobs: Record<string, string>;
-  onSave: (jobId: string, status: "saved") => void;
-  emptyText: string;
+  isLoading: boolean;
+  error: string;
+  filtersActive: boolean;
+  lookingFor: LookingFor;
+  reviewedCount: number;
+  limitApplied: boolean;
+  onRetry: () => void;
+  onSave: (jobId: string) => void;
 }>) {
   return (
     <Reveal>
       <Card className="p-5 sm:p-6">
-        <div className="mb-5 flex items-start justify-between gap-4">
+        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <p className="flex items-center gap-2 text-sm font-medium text-[#5661d8]">
-              <Icon size={16} />
-              {title}
+              <Sparkles size={16} />
+              Top matches
             </p>
-            <p className="mt-1 text-sm text-[#7a828f]">{description}</p>
+            <p className="mt-1 text-sm text-[#7a828f]">
+              {limitApplied ? `AI reviewed the newest ${reviewedCount} matching openings.` : `AI reviewed ${reviewedCount} matching openings.`}
+            </p>
           </div>
-          <span className="rounded-full border border-black/[0.06] bg-white px-3 py-1 text-xs text-[#687180] shadow-sm">{jobs.length}</span>
+          {!isLoading && jobs.length > 0 ? (
+            <span className="rounded-full border border-black/[0.06] bg-white px-3 py-1 text-xs text-[#687180] shadow-sm">{jobs.length}</span>
+          ) : null}
         </div>
 
-        {jobs.length ? (
+        {isLoading ? <RadarLoadingState /> : error ? <RadarErrorState onRetry={onRetry} /> : jobs.length ? (
           <Stagger className="divide-y divide-black/[0.06]">
-            {jobs.map(({ job, match }, index) => (
+            {jobs.map(({ job, aiMatch }, index) => (
               <StaggerItem key={job.id}>
-                <JobListRow job={job} match={match} rank={index + 1} saved={Boolean(savedJobs[job.id])} onSave={() => onSave(job.id, "saved")} />
+                <JobListRow job={job} aiMatch={aiMatch} rank={index + 1} saved={Boolean(savedJobs[job.id])} onSave={() => onSave(job.id)} />
               </StaggerItem>
             ))}
           </Stagger>
         ) : (
-          <p className="rounded-[22px] border border-black/[0.06] bg-[#fbfbfd] p-4 text-sm text-[#7a828f]">{emptyText}</p>
+          <p className="rounded-[22px] border border-black/[0.06] bg-[#fbfbfd] p-5 text-sm leading-6 text-[#7a828f]">
+            {getEmptyText(filtersActive, "No AI-selected matches are ready for this view yet.", lookingFor)}
+          </p>
         )}
       </Card>
     </Reveal>
   );
 }
 
-function JobListRow({ job, match, rank, saved, onSave }: Readonly<{ job: Job; match: MatchResult; rank: number; saved: boolean; onSave: () => void }>) {
-  const topReason = match.why[0]?.replace(/\.$/, "");
-
+function RadarLoadingState() {
   return (
-    <motion.div className="group grid gap-4 py-4 sm:grid-cols-[44px_1fr_auto] sm:items-center" whileHover={{ x: 4 }} transition={{ type: "spring", stiffness: 320, damping: 28 }}>
-      <div className="flex items-center gap-3 sm:block">
-        <span className="grid h-9 w-9 place-items-center rounded-full bg-[#f2f4fb] text-sm font-semibold text-[#5661d8]">{rank}</span>
+    <div className="rounded-[28px] border border-black/[0.06] bg-white/70 p-8 text-center shadow-sm">
+      <div className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-[#f0f2ff] text-[#5661d8]">
+        <Loader2 className="animate-spin" size={22} />
+      </div>
+      <h2 className="mt-5 text-2xl font-semibold tracking-[-0.04em] text-[#171b24]">Reading your resume against current openings...</h2>
+      <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-[#687180]">
+        Stealth is comparing role context, skills, sponsorship needs, and job descriptions before showing your radar.
+      </p>
+      <div className="mx-auto mt-7 max-w-2xl space-y-3">
+        {[0, 1, 2].map((item) => (
+          <div key={item} className="rounded-[22px] border border-black/[0.04] bg-[#f7f8fc] p-4">
+            <div className="h-3 w-1/4 animate-pulse rounded-full bg-[#e7eaf4]" />
+            <div className="mt-3 h-4 w-3/4 animate-pulse rounded-full bg-[#e0e4ef]" />
+            <div className="mt-3 h-3 w-1/2 animate-pulse rounded-full bg-[#edf0f7]" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function RadarErrorState({ onRetry }: Readonly<{ onRetry: () => void }>) {
+  return (
+    <div className="rounded-[28px] border border-black/[0.06] bg-white/75 p-8 text-center shadow-sm">
+      <div className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-[#f8f0ff] text-[#5661d8]">
+        <RefreshCw size={20} />
+      </div>
+      <h2 className="mt-5 text-2xl font-semibold tracking-[-0.04em] text-[#171b24]">AI ranking could not complete</h2>
+      <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-[#687180]">
+        The radar only shows AI-selected matches. Retry when the model is available, or adjust filters to review fewer openings.
+      </p>
+      <Button className="mt-6" onClick={onRetry}>
+        <RefreshCw size={15} />
+        Retry radar
+      </Button>
+    </div>
+  );
+}
+
+function JobListRow({
+  job,
+  aiMatch,
+  rank,
+  saved,
+  onSave
+}: Readonly<{
+  job: Job;
+  aiMatch: AiDashboardJobMatch;
+  rank: number;
+  saved: boolean;
+  onSave: () => void;
+}>) {
+  return (
+    <motion.div
+      className="group -mx-3 grid gap-4 rounded-[24px] px-3 py-5 transition hover:bg-white/55 lg:grid-cols-[56px_1fr_132px_auto] lg:items-center"
+      whileHover={{ x: 4 }}
+      transition={{ type: "spring", stiffness: 320, damping: 28 }}
+    >
+      <div className="relative h-12 w-12">
+        <CompanyLogo company={job.company} />
+        <span className="absolute -bottom-1 -right-1 grid h-5 min-w-5 place-items-center rounded-full border border-white bg-[#f1f3ff] px-1 text-[10px] font-semibold text-[#5661d8] shadow-sm">
+          {rank}
+        </span>
       </div>
 
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2 text-xs text-[#8c94a3]">
-          <span>{job.company}</span>
+          <span className="font-medium text-[#5f6877]">{job.company}</span>
           <span>·</span>
           <span>{job.location}</span>
           <span>·</span>
@@ -265,7 +449,16 @@ function JobListRow({ job, match, rank, saved, onSave }: Readonly<{ job: Job; ma
         <Link href={`/jobs/${job.id}`} className="mt-1 block text-lg font-semibold tracking-[-0.02em] text-[#171b24] transition hover:text-[#5661d8]">
           {job.title}
         </Link>
-        <p className="mt-2 line-clamp-1 text-sm text-[#687180]">{topReason}</p>
+        <p className="mt-2 line-clamp-2 text-sm leading-6 text-[#687180]">{aiMatch.reason}</p>
+        {aiMatch.riskFlags.length ? (
+          <p className="mt-2 line-clamp-1 text-xs text-[#9aa1ad]">Note: {aiMatch.riskFlags[0]}</p>
+        ) : null}
+      </div>
+
+      <div className="flex items-center lg:justify-end">
+        <span className={cn("rounded-full border px-3 py-1.5 text-xs font-medium capitalize", getConfidenceTone(aiMatch.confidence))}>
+          {aiMatch.confidence} confidence
+        </span>
       </div>
 
       <div className="flex items-center gap-2 sm:justify-end">
@@ -281,6 +474,110 @@ function JobListRow({ job, match, rank, saved, onSave }: Readonly<{ job: Job; ma
       </div>
     </motion.div>
   );
+}
+
+function StatusPill({ label, active = false }: Readonly<{ label: string; active?: boolean }>) {
+  return (
+    <span className="inline-flex items-center gap-2 rounded-full border border-[#dfe3ff] bg-white/70 px-3 py-1 text-xs font-medium text-[#5661d8] shadow-sm">
+      {active ? <Loader2 size={12} className="animate-spin" /> : null}
+      {label}
+    </span>
+  );
+}
+
+function hashProfileForDashboard(profile: CandidateProfile) {
+  return stableTextHash(
+    JSON.stringify({
+      version: DASHBOARD_MATCH_VERSION,
+      resumeText: profile.resumeText,
+      headline: profile.headline,
+      targetRoles: profile.targetRoles,
+      skills: profile.skills,
+      roleEvidence: profile.roleEvidence,
+      skillEvidence: profile.skillEvidence,
+      experienceFocus: profile.experienceFocus,
+      visaSponsorshipNeeded: profile.visaSponsorshipNeeded,
+      lookingFor: profile.lookingFor
+    })
+  );
+}
+
+function readCachedDashboardMatches(cacheKey: string, jobIds: string[]) {
+  try {
+    const cached = localStorage.getItem(cacheKey);
+    if (!cached) return null;
+    const matches = sanitizeDashboardMatches(JSON.parse(cached), jobIds);
+    return matches.length ? matches : null;
+  } catch {
+    return null;
+  }
+}
+
+function sanitizeDashboardMatches(value: unknown, jobIds: string[]) {
+  if (!Array.isArray(value)) return [];
+  const validIds = new Set(jobIds);
+  const seen = new Set<string>();
+  const matches: AiDashboardJobMatch[] = [];
+
+  for (const item of value) {
+    if (!isAiDashboardJobMatch(item) || !validIds.has(item.jobId) || seen.has(item.jobId)) continue;
+    matches.push(item);
+    seen.add(item.jobId);
+  }
+
+  return matches.slice(0, 50);
+}
+
+function isAiDashboardJobMatch(value: unknown): value is AiDashboardJobMatch {
+  if (!value || typeof value !== "object") return false;
+  const match = value as Partial<AiDashboardJobMatch>;
+  return (
+    typeof match.jobId === "string" &&
+    (match.confidence === "low" || match.confidence === "medium" || match.confidence === "high") &&
+    typeof match.reason === "string" &&
+    Array.isArray(match.matchedSignals) &&
+    Array.isArray(match.riskFlags) &&
+    match.source === "openrouter"
+  );
+}
+
+function getConfidenceTone(confidence: SignalConfidence) {
+  if (confidence === "high") return "border-emerald-200 bg-emerald-50 text-emerald-700";
+  if (confidence === "medium") return "border-indigo-200 bg-indigo-50 text-indigo-700";
+  return "border-slate-200 bg-white text-[#687180]";
+}
+
+function CompanyLogo({ company }: Readonly<{ company: string }>) {
+  const [logoIndex, setLogoIndex] = useState(0);
+  const logoUrls = getCompanyLogoUrls(company);
+  const logoUrl = logoUrls[logoIndex];
+  const initials = getCompanyInitials(company);
+
+  return (
+    <div className="grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-2xl border border-black/[0.06] bg-white shadow-[0_10px_30px_rgba(20,25,34,0.08)]">
+      {logoUrl ? (
+        <img
+          src={logoUrl}
+          alt={`${company} logo`}
+          className="h-full w-full object-contain p-2"
+          loading="lazy"
+          referrerPolicy="no-referrer"
+          onError={() => setLogoIndex((index) => index + 1)}
+        />
+      ) : (
+        <span className="text-sm font-semibold text-[#5661d8]">{initials}</span>
+      )}
+    </div>
+  );
+}
+
+function getRadarStatusText(isLoading: boolean, error: string, matchedCount: number, reviewedCount: number, limitApplied: boolean) {
+  if (isLoading) return "Reading openings";
+  if (error) return "Retry needed";
+  if (matchedCount) return `${matchedCount} AI-selected matches`;
+  if (reviewedCount && limitApplied) return `Ready to review ${reviewedCount}`;
+  if (reviewedCount) return "Ready to review";
+  return "No openings";
 }
 
 function buildRoleLanes(roleDirections: RoleDirection[]) {
@@ -327,7 +624,7 @@ function getRoleAffinity(alignment: ReturnType<typeof getJobAlignmentForDirectio
 
 function shouldShowJobForLane(
   job: Job,
-  roleTier: ScoredJob["roleTier"],
+  roleTier: FilteredJob["roleTier"],
   lane: RoleLane | null,
   laneMode: "resume-fit" | "role-lane" | "all"
 ) {
@@ -348,24 +645,24 @@ function shouldShowJobForLane(
   return true;
 }
 
-function getTierRank(tier: ScoredJob["roleTier"]) {
-  return {
-    core: 4,
-    adjacent: 3,
-    weak: 2,
-    unrelated: 1
-  }[tier];
-}
-
 function getRecencyScore(postedDate: string) {
   const timestamp = new Date(postedDate).getTime();
   if (!Number.isFinite(timestamp)) return 0;
   return Math.max(0, 100 - Math.floor((Date.now() - timestamp) / 86_400_000));
 }
 
-function matchesRecency(postedDate: string, recency: string) {
-  if (recency === "all") return true;
-  const days = Number(recency);
+function matchesViewFilter(job: Job, viewFilter: ViewFilter) {
+  if (viewFilter === "all") return true;
+  if (viewFilter === "remote") return job.workType === "Remote";
+  if (viewFilter === "hybrid") return job.workType === "Hybrid";
+  if (viewFilter === "onsite") return job.workType === "On-site";
+  if (viewFilter === "sponsor-friendly") return job.sponsorshipFriendly === "high" || job.sponsorshipFriendly === "medium";
+  if (viewFilter === "fresh-week") return postedWithinDays(job.postedDate, 7);
+  if (viewFilter === "fresh-month") return postedWithinDays(job.postedDate, 30);
+  return true;
+}
+
+function postedWithinDays(postedDate: string, days: number) {
   const timestamp = new Date(postedDate).getTime();
   if (!Number.isFinite(timestamp)) return false;
   return Date.now() - timestamp <= days * 86_400_000;
@@ -388,38 +685,24 @@ function matchesLookingFor(job: Job, lookingFor: LookingFor) {
 }
 
 function getEmptyText(filtersActive: boolean, fallback: string, lookingFor: LookingFor) {
-  if (filtersActive) return "No roles match these filters. Clear one filter or choose a broader role lane.";
+  if (filtersActive) return "No openings match these filters. Clear one filter or choose a broader role lane.";
   if (lookingFor === "Internship") return "No internship postings match this resume lane yet. Try another lane or ingest more internship boards.";
   if (lookingFor === "Part-time job") return "No part-time postings match this resume lane yet. Try another lane or broaden the search type.";
   return fallback;
 }
 
-function Metric({ label, value }: Readonly<{ label: string; value: number }>) {
-  return (
-    <div className="rounded-[22px] border border-black/[0.06] bg-white/70 p-4 shadow-sm">
-      <p className="text-xs font-medium uppercase tracking-[0.14em] text-[#9aa1ad]">{label}</p>
-      <p className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-[#171b24]">{value}</p>
-    </div>
-  );
-}
-
-function LaneButton({ active, label, count, onClick }: Readonly<{ active: boolean; label: string; count: number; onClick: () => void }>) {
-  return (
-    <button type="button" onClick={onClick} className={cn("shrink-0 rounded-full border px-4 py-2 text-sm transition", active ? "border-[#c8ceff] bg-[#f0f2ff] text-[#5661d8] shadow-sm" : "border-black/[0.06] bg-white/65 text-[#687180] hover:bg-white hover:text-[#171b24]")}>
-      {label}
-      <span className="ml-2 text-xs opacity-70">{count}</span>
-    </button>
-  );
-}
-
 function FilterSelect<T extends string>({ label, value, onChange, options }: Readonly<{ label: string; value: T; onChange: (value: T) => void; options: { label: string; value: T }[] }>) {
   return (
-    <label className="relative">
-      <span className="sr-only">{label}</span>
-      <select value={value} onChange={(event) => onChange(event.target.value as T)} className="h-11 w-full min-w-40 appearance-none rounded-full border border-black/[0.08] bg-white px-4 pr-9 text-sm font-medium text-[#171b24] shadow-sm outline-none transition hover:bg-[#fbfbfd] focus:border-[#bdc5ff] focus:ring-2 focus:ring-[#bdc5ff]/40">
+    <label className="relative block">
+      <span className="mb-1.5 ml-3 block text-[11px] font-medium uppercase tracking-[0.16em] text-[#9aa1ad]">{label}</span>
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value as T)}
+        className="h-12 w-full appearance-none rounded-full border border-black/[0.07] bg-white/85 px-4 pr-10 text-sm font-medium text-[#171b24] shadow-[0_10px_30px_rgba(20,25,34,0.06)] outline-none transition hover:bg-white focus:border-[#bdc5ff] focus:ring-4 focus:ring-[#bdc5ff]/20"
+      >
         {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
       </select>
-      <Filter size={14} className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-[#8a92a0]" />
+      <ChevronDown size={15} className="pointer-events-none absolute bottom-4 right-4 text-[#8a92a0]" />
     </label>
   );
 }

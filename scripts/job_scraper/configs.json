@@ -1,0 +1,53 @@
+[
+  {
+    "id": "apple-students",
+    "company": "Apple",
+    "careersUrl": "https://jobs.apple.com/en-us/search?team=students-STDNT",
+    "mode": "static",
+    "category": "tech",
+    "sponsorshipFriendly": "medium",
+    "competitionLevel": "high",
+    "enabled": true,
+    "selectors": {
+      "jobCard": "a[href*='/en-us/details/']",
+      "title": "",
+      "location": "",
+      "applyUrl": "",
+      "detailBody": "main"
+    }
+  },
+  {
+    "id": "tesla-internships",
+    "company": "Tesla",
+    "careersUrl": "https://www.tesla.com/careers/search/?query=intern",
+    "mode": "playwright",
+    "category": "manufacturing",
+    "sponsorshipFriendly": "medium",
+    "competitionLevel": "high",
+    "enabled": true,
+    "selectors": {
+      "jobCard": "a[href*='/careers/search/job/']",
+      "title": "",
+      "location": "",
+      "applyUrl": "",
+      "detailBody": "main"
+    }
+  },
+  {
+    "id": "microsoft-students",
+    "company": "Microsoft",
+    "careersUrl": "https://jobs.careers.microsoft.com/global/en/search?q=internship",
+    "mode": "playwright",
+    "category": "tech",
+    "sponsorshipFriendly": "high",
+    "competitionLevel": "high",
+    "enabled": true,
+    "selectors": {
+      "jobCard": "a[href*='/global/en/job/']",
+      "title": "",
+      "location": "",
+      "applyUrl": "",
+      "detailBody": "main"
+    }
+  }
+]

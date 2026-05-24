@@ -241,7 +241,8 @@ Main files:
 Current behavior:
 - Server-side OpenRouter call using `OPENROUTER_API_KEY`.
 - Supports task-specific models through `OPENROUTER_PROFILE_MODEL`, falling back to `OPENROUTER_MODEL`.
-- Uses `temperature: 0` and a versioned prompt/cache key through `PROFILE_EXTRACTION_VERSION`.
+- The recommended fast free model is `nvidia/nemotron-3-nano-30b-a3b:free`; it uses JSON-object response formatting with server-side validation and falls back across configured models when available.
+- Uses deterministic prompt instructions where supported plus a versioned prompt/cache key through `PROFILE_EXTRACTION_VERSION`.
 - Strict JSON schema response for the `CandidateProfile` shape.
 - Prompt asks the model to stay concise, evidence-backed, and avoid invented facts.
 - The candidate profile now includes evidence fields:
@@ -259,7 +260,10 @@ Current reliability rules:
 - Every target role and skill should be supported by resume evidence.
 - Software roles require hard software evidence; Python/SQL alone is not enough.
 - Supply chain, operations, procurement, logistics, inventory, forecasting, and planning evidence takes priority over generic analytics/software inference.
-- Job-detail AI is one-job-at-a-time only; dashboard remains deterministic for cost and speed.
+- Job-detail AI is one-job-at-a-time only. Radar uses AI selection after hard filters and avoids showing deterministic compatibility ratings on the dashboard.
+- Radar AI reviews up to 200 filtered openings and can return up to 50 student-first matches.
+- Radar prompt prefers internships, co-ops, university/student programs, new grad, early career, rotational/development programs, and entry-level analyst roles.
+- Jobs requiring 2+ years of professional experience should be excluded or heavily downgraded unless clearly labeled intern, new grad, early career, university/student, rotational, or development program.
 
 ## Job Data
 
@@ -282,27 +286,43 @@ The app reads jobs through:
 Server APIs:
 
 - `GET /api/jobs`: returns the normalized job catalog.
-- `GET /api/jobs/ingest`: Vercel Cron refresh endpoint, scheduled once daily at 08:00 UTC through `vercel.json` for Vercel Hobby compatibility.
+- `GET /api/jobs/ingest?mode=full&batchSize=30`: Vercel Cron refresh endpoint, scheduled once daily at 08:00 UTC through `vercel.json` for Vercel Hobby compatibility.
 - `POST /api/jobs/ingest`: manual refresh endpoint for local/admin use.
+- `POST /api/jobs/import-scraped`: secured import endpoint for normalized BeautifulSoup/Playwright scraper output.
+- `/api/jobs/ingest?mode=discover`: checks a Hobby-safe batch of Fortune 100 careers pages and stores supported ATS configs only.
+- `/api/jobs/ingest?mode=full`: discovers supported ATS configs, then ingests approved plus discovered sources.
+- Optional params: `batchSize` up to 50 and `forceCompany` for debugging one company.
 - In production, ingestion accepts Vercel `CRON_SECRET` Bearer auth or `INGEST_ADMIN_TOKEN` through `x-ingest-token`.
+- Scraped imports require `INGEST_ADMIN_TOKEN` through `x-ingest-token` in production.
 
 Ingestion implementation:
 
 - `lib/job-ingestion/source-registry.ts`: approved feed config.
+- `lib/job-ingestion/fortune-targets.ts`: curated Fortune 100 discovery targets.
+- `lib/job-ingestion/discovery.ts`: ATS discovery for Greenhouse, Lever, Ashby, and explicit Workday CXS career links.
 - `lib/job-ingestion/connectors.ts`: Greenhouse, Lever, Ashby, and curated Workday public feed connectors.
 - `lib/job-ingestion/normalization.ts`: provider-to-`Job` normalization, full-description cleaning, validation, role filtering, deterministic skill extraction, dedupe helpers, and UI conversion.
 - `lib/job-ingestion/cache.ts`: local JSON cache read/write.
 - `lib/job-ingestion/manual.ts`: manual JSON import support.
-- `lib/job-ingestion/ingest.ts`: orchestration for approved sources plus manual jobs.
+- `lib/job-ingestion/ingest.ts`: orchestration for approved, discovered, and manual jobs.
+- `scripts/job_scraper/run.py`: external BeautifulSoup/Playwright worker for allowlisted company-owned careers pages.
+- `.github/workflows/job-scraper.yml`: daily/manual GitHub Actions scraper job that posts into `/api/jobs/import-scraped`.
 
 Current ingestion policy:
-- Approved connector types: Greenhouse, Lever, Ashby, curated Workday CXS feeds, manual JSON.
+- Approved connector types: Greenhouse, Lever, Ashby, curated/discovered Workday CXS feeds, manual JSON, and allowlisted `company_careers` scraper imports.
 - Active default sources include curated Greenhouse, Lever, Ashby, manual JSON, and known Workday boards for tech, finance, retail, logistics, operations, AI/software, and manufacturing-heavy companies.
-- Workday ingestion uses explicit host, tenant, and site config only; it does not auto-discover boards or scrape arbitrary company HTML.
+- Discovery inspects careers pages only to find supported public ATS board links/tokens. It does not scrape arbitrary job cards.
+- Workday ingestion uses explicit host, tenant, and site config discovered from known `myworkdayjobs.com` career links or curated config; it does not scrape Workday HTML.
+- Scraping is a supplemental path for company-owned public careers pages only. It does not scrape LinkedIn, Indeed, Handshake, Google Jobs, supported ATS pages, login pages, captcha pages, or blocked pages.
+- Scraping respects robots.txt and emits warnings instead of bypassing anti-bot controls.
 - Ingestion is deterministic and does not call AI.
 - Broad company feeds are filtered to student-relevant roles by title and exclude senior/manager/lead/principal/staff/director roles.
+- Student-relevant import signals include internships, co-ops, university/student programs, new grad, early talent, campus, rotational/development programs, entry-level, and associate analyst roles.
+- Non-student roles with hard 2+ year professional experience requirements are rejected during ingestion unless they include explicit student/new-grad/early-career signals.
+- Workday boards query multiple student-first terms including intern, co-op, university, new grad, early career, graduate, and analyst.
 - Source fetches use limited concurrency so one slow public board does not stall the whole refresh.
 - Supabase jobs track `first_seen_at`, `last_seen_at`, `closed_at`, `is_active`, and `description_hash`.
+- Supabase discovery tables: `discovered_job_sources` and `job_discovery_runs`.
 - Successful source refreshes mark disappeared jobs inactive; failed sources do not close existing jobs.
 - Each refresh is logged to `job_ingestion_runs`.
 
@@ -334,7 +354,7 @@ The app now has a public-source ingestion layer for approved APIs:
 - Ashby public job postings API
 - Workday public CXS career-site endpoints for curated known boards
 
-The active catalog target is 500 normalized public postings. Supabase `jobs` writes require `SUPABASE_SERVICE_ROLE_KEY`; without it, ingestion still refreshes `data/ingested-jobs.json` and returns a warning.
+The active catalog target is 1000 normalized public postings. Supabase `jobs` writes require `SUPABASE_SERVICE_ROLE_KEY`; without it, ingestion still refreshes `data/ingested-jobs.json` and returns a warning.
 
 ## Scoring
 
@@ -348,7 +368,7 @@ Fit score considers:
 - Sponsorship friendliness
 - Competition level
 
-Dashboard scoring stays deterministic and local for speed/cost.
+Radar dashboard AI selection uses `/api/jobs/rank` after hard filters and does not show a deterministic numeric score. Deterministic scoring remains available only for fallback/internal utility surfaces.
 
 Job detail scoring uses deeper AI compatibility analysis:
 - Full parsed resume text
@@ -449,9 +469,10 @@ Required AI environment:
 
 ```bash
 OPENROUTER_API_KEY=your_openrouter_key_here
-OPENROUTER_MODEL=openai/gpt-4o-mini
-OPENROUTER_PROFILE_MODEL=openai/gpt-4o-mini
-OPENROUTER_MATCH_MODEL=openai/gpt-4o-mini
+OPENROUTER_MODEL=nvidia/nemotron-3-nano-30b-a3b:free
+OPENROUTER_PROFILE_MODEL=nvidia/nemotron-3-nano-30b-a3b:free
+OPENROUTER_MATCH_MODEL=nvidia/nemotron-3-nano-30b-a3b:free
+OPENROUTER_FALLBACK_MODELS=openrouter/free
 NEXT_PUBLIC_APP_URL=http://localhost:3000
 ```
 

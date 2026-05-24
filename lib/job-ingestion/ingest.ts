@@ -1,16 +1,60 @@
 import { readIngestedJobsCache, writeIngestedJobsCache } from "@/lib/job-ingestion/cache";
 import { fetchApprovedSourcePostings } from "@/lib/job-ingestion/connectors";
+import {
+  discoverFortuneJobSources,
+  readDiscoveredJobSourceConfigs,
+  type DiscoveryMode,
+  type DiscoveryRunSummary
+} from "@/lib/job-ingestion/discovery";
 import { readManualJobs } from "@/lib/job-ingestion/manual";
 import { dedupeJobs, isRelevantStudentRole, normalizeProviderPosting } from "@/lib/job-ingestion/normalization";
+import { approvedJobSources, type JobSourceConfig } from "@/lib/job-ingestion/source-registry";
 import { upsertSupabaseJobs } from "@/lib/job-ingestion/supabase-jobs";
 import type { IngestedJobRecord } from "@/lib/types";
 
-const maxCatalogJobs = 500;
+const maxCatalogJobs = 1000;
 
-export async function ingestApprovedJobs() {
+export type IngestApprovedJobsOptions = {
+  mode?: DiscoveryMode;
+  batchSize?: number;
+  forceCompany?: string;
+};
+
+export async function ingestApprovedJobs({
+  mode = "ingest",
+  batchSize,
+  forceCompany
+}: IngestApprovedJobsOptions = {}) {
   const startedAt = Date.now();
   const importedAt = new Date().toISOString();
-  const sourceResults = await fetchApprovedSourcePostings();
+  const warnings: string[] = [];
+  let discoveryResults: DiscoveryRunSummary | undefined;
+
+  if (mode === "discover" || mode === "full") {
+    try {
+      discoveryResults = await discoverFortuneJobSources({ batchSize, forceCompany });
+      warnings.push(...discoveryResults.warnings);
+    } catch (error) {
+      warnings.push(`Fortune 100 ATS discovery failed: ${error instanceof Error ? error.message : "Unknown error."}`);
+    }
+  }
+
+  if (mode === "discover") {
+    return {
+      importedAt,
+      jobs: [],
+      insertedCount: 0,
+      updatedCount: 0,
+      closedCount: 0,
+      skipped: [],
+      sourceResults: [],
+      warnings,
+      discoveryResults
+    };
+  }
+
+  const sourceConfigs = await getMergedSourceConfigs();
+  const sourceResults = await fetchApprovedSourcePostings(sourceConfigs);
   const records: IngestedJobRecord[] = [];
   const sourceSummaries: {
     source: IngestedJobRecord["metadata"]["source"];
@@ -27,7 +71,6 @@ export async function ingestApprovedJobs() {
     title: string;
     reason: string;
   }[] = [];
-  const warnings: string[] = [];
 
   for (const result of sourceResults) {
     let importedCount = 0;
@@ -101,17 +144,50 @@ export async function ingestApprovedJobs() {
     closedCount: supabaseResult.closedCount,
     skipped,
     sourceResults: sourceSummaries,
-    warnings
+    warnings,
+    discoveryResults
   };
+}
+
+async function getMergedSourceConfigs() {
+  const discoveredConfigs = await readDiscoveredJobSourceConfigs();
+  return dedupeSourceConfigs([...approvedJobSources, ...discoveredConfigs]);
+}
+
+function dedupeSourceConfigs(configs: JobSourceConfig[]) {
+  const seen = new Map<string, JobSourceConfig>();
+
+  for (const config of configs) {
+    if (!config.enabled) continue;
+    seen.set(getSourceConfigKey(config), config);
+  }
+
+  return [...seen.values()];
+}
+
+function getSourceConfigKey(config: JobSourceConfig) {
+  if (config.source === "workday" && config.workday) {
+    return `${config.source}:${config.company.toLowerCase()}:${config.workday.host}:${config.workday.tenant}:${config.workday.site}`;
+  }
+
+  return `${config.source}:${config.company.toLowerCase()}:${config.boardToken ?? config.id}`;
 }
 
 function getCatalogPriority(record: IngestedJobRecord) {
   const title = record.title.toLowerCase();
   const directStudentRole =
     title.includes("intern") ||
+    title.includes("co-op") ||
+    title.includes("co op") ||
     title.includes("new grad") ||
+    title.includes("new graduate") ||
     title.includes("university") ||
-    title.includes("early career")
+    title.includes("early career") ||
+    title.includes("early talent") ||
+    title.includes("rotational") ||
+    title.includes("development program") ||
+    title.includes("entry level") ||
+    title.includes("entry-level")
       ? 80
       : 0;
   const roleSignal = ["analyst", "data", "software", "operations", "supply chain", "product", "procurement"].filter((signal) =>

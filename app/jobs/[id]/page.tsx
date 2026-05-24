@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Reveal, Stagger, StaggerItem } from "@/components/motion-primitives";
 import { JOB_MATCH_VERSION } from "@/lib/ai-versions";
+import { getCompanyInitials, getCompanyLogoUrls } from "@/lib/company-logos";
 import type { AiJobAnalysis, Job, SavedStatus } from "@/lib/types";
 import { cn, formatDate } from "@/lib/utils";
 
@@ -423,9 +424,24 @@ function AnalysisLoadingState({ compact = false }: Readonly<{ compact?: boolean 
 }
 
 function CompanyMark({ company }: Readonly<{ company: string }>) {
+  const [logoIndex, setLogoIndex] = useState(0);
+  const logoUrls = getCompanyLogoUrls(company);
+  const logoUrl = logoUrls[logoIndex];
+
   return (
-    <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl border border-black/[0.06] bg-white text-sm font-semibold text-[#5661d8] shadow-sm">
-      {company.slice(0, 2).toUpperCase()}
+    <div className="grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-2xl border border-black/[0.06] bg-white text-sm font-semibold text-[#5661d8] shadow-sm">
+      {logoUrl ? (
+        <img
+          src={logoUrl}
+          alt={`${company} logo`}
+          className="h-full w-full object-contain p-2"
+          loading="lazy"
+          referrerPolicy="no-referrer"
+          onError={() => setLogoIndex((index) => index + 1)}
+        />
+      ) : (
+        getCompanyInitials(company)
+      )}
     </div>
   );
 }
@@ -438,11 +454,7 @@ function DescriptionBlock({
   onToggle
 }: Readonly<{ description: string; highlights: string[]; loading: boolean; expanded: boolean; onToggle: () => void }>) {
   const cleanDescription = description.trim();
-  const paragraphs = cleanDescription
-    .split(/\n{2,}|(?<=\.)\s+(?=(?:About|What|Who|Responsibilities|Requirements|Qualifications|You|We)\b)/)
-    .map((paragraph) => paragraph.trim())
-    .filter(Boolean)
-    .slice(0, 18);
+  const descriptionBlocks = parseJobDescription(cleanDescription).slice(0, 80);
 
   return (
     <section>
@@ -473,9 +485,9 @@ function DescriptionBlock({
       )}
 
       {expanded && (
-        <div className="mt-5 max-h-[520px] space-y-4 overflow-y-auto rounded-[26px] border border-black/[0.06] bg-white/55 p-5 text-sm leading-7 text-[#5f6877] shadow-sm">
-          {paragraphs.map((paragraph) => (
-            <p key={paragraph}>{paragraph}</p>
+        <div className="mt-5 max-h-[560px] space-y-5 overflow-y-auto rounded-[26px] border border-black/[0.06] bg-white/55 p-6 text-sm leading-7 text-[#5f6877] shadow-sm">
+          {descriptionBlocks.map((block, index) => (
+            <DescriptionBlockContent key={getDescriptionBlockKey(block, index)} block={block} />
           ))}
         </div>
       )}
@@ -490,6 +502,135 @@ function DescriptionBlock({
         </button>
       )}
     </section>
+  );
+}
+
+type ParsedDescriptionBlock =
+  | { type: "heading"; text: string }
+  | { type: "paragraph"; text: string }
+  | { type: "list"; items: string[] };
+
+function DescriptionBlockContent({ block }: Readonly<{ block: ParsedDescriptionBlock }>) {
+  if (block.type === "heading") {
+    return <h3 className="pt-1 text-sm font-semibold tracking-[-0.01em] text-[#171b24]">{block.text}</h3>;
+  }
+
+  if (block.type === "list") {
+    return (
+      <ul className="space-y-2">
+        {block.items.map((item) => (
+          <li key={item} className="grid grid-cols-[18px_1fr] gap-2">
+            <span className="mt-3 h-1.5 w-1.5 rounded-full bg-[#626eea]" />
+            <span>{item}</span>
+          </li>
+        ))}
+      </ul>
+    );
+  }
+
+  return <p>{block.text}</p>;
+}
+
+function getDescriptionBlockKey(block: ParsedDescriptionBlock, index: number) {
+  const value = block.type === "list" ? block.items[0] : block.text;
+  return `${block.type}-${index}-${value}`;
+}
+
+function parseJobDescription(description: string): ParsedDescriptionBlock[] {
+  const prepared = addReadableBreaks(description);
+  const lines = prepared
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const blocks: ParsedDescriptionBlock[] = [];
+  let pendingList: string[] = [];
+
+  const flushList = () => {
+    if (!pendingList.length) return;
+    blocks.push({ type: "list", items: pendingList });
+    pendingList = [];
+  };
+
+  const addBodyText = (text: string) => {
+    const items = splitLikelyListItems(text);
+    if (items.length >= 2) {
+      pendingList.push(...items);
+      return;
+    }
+
+    flushList();
+    blocks.push({ type: "paragraph", text });
+  };
+
+  for (const line of lines) {
+    const bullet = line.match(/^[-•*]\s+(.+)$/);
+    if (bullet) {
+      pendingList.push(bullet[1].trim());
+      continue;
+    }
+
+    const inlineSection = extractInlineSection(line);
+    if (inlineSection) {
+      flushList();
+      blocks.push({ type: "heading", text: inlineSection.heading });
+      if (inlineSection.body) addBodyText(inlineSection.body);
+      continue;
+    }
+
+    flushList();
+    blocks.push(isLikelyDescriptionHeading(line) ? { type: "heading", text: line } : { type: "paragraph", text: line });
+  }
+
+  flushList();
+  return blocks.length ? blocks : [{ type: "paragraph", text: description }];
+}
+
+function addReadableBreaks(description: string) {
+  const normalized = description.replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
+  const source = normalized.includes("\n") ? normalized : normalized.replace(
+    /\s+(?=(About (?:Us|the Role|This Role)|Who We Are|The Role|About the Role|What You'll Do|What You Will Do|What You Bring|Responsibilities|Requirements|Qualifications|Minimum Qualifications|Preferred Qualifications|Basic Qualifications|Benefits|Compensation|Salary Range|Equal Opportunity)\b)/g,
+    "\n\n"
+  );
+
+  return source
+    .replace(
+      /\s+(?=(Ability to|Actively pursuing|A graduation date|Bachelor'?s|Comfortable|Create|Define|Deploy|Design|Develop|Experience (?:with|building|in)|Familiar with|Knowledge of|Nice to have|Prior internship|Previous|Product engineering experience|Track record|Understanding of|Use|Work with|Build)\b)/g,
+      "\n- "
+    );
+}
+
+function extractInlineSection(line: string) {
+  const match = line.match(
+    /^(About(?: Us| the Role| This Role)?|Who We Are|The Role|About the Role|What You'll Do|What You Will Do|What You Bring|Responsibilities|Requirements|Qualifications|Minimum Qualifications|Preferred Qualifications|Basic Qualifications|Benefits|Compensation|Salary Range|Equal Opportunity)(?::|\s+-\s+)?\s*(.*)$/i
+  );
+  if (!match) return null;
+
+  const heading = match[1].trim();
+  const body = match[2].trim();
+  if (!body || body.length > 20) return { heading, body };
+  return null;
+}
+
+function splitLikelyListItems(text: string) {
+  const parts = text
+    .replace(
+      /\s+(?=(Ability to|Actively pursuing|A graduation date|Bachelor'?s|Comfortable|Create|Define|Deploy|Design|Develop|Experience (?:with|building|in)|Familiar with|Knowledge of|Nice to have|Prior internship|Previous|Product engineering experience|Track record|Understanding of|Use|Work with|Build)\b)/g,
+      "\n"
+    )
+    .split("\n")
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  if (parts.length < 2) return [];
+  return parts;
+}
+
+function isLikelyDescriptionHeading(line: string) {
+  if (line.length > 90) return false;
+  if (/[.!?]$/.test(line)) return false;
+  return /^(About|Who We Are|The Role|What|Responsibilities|Requirements|Qualifications|Minimum|Preferred|Basic|Benefits|Compensation|You Will|You Have|Nice to Have)/i.test(
+    line
   );
 }
 

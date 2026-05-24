@@ -7,7 +7,7 @@ import type {
   WorkType
 } from "@/lib/types";
 import type { JobSourceConfig } from "@/lib/job-ingestion/source-registry";
-import type { ManualJobInput, NormalizerInput, RawPosting } from "@/lib/job-ingestion/types";
+import type { ManualJobInput, NormalizerInput, RawPosting, ScrapedJobInput } from "@/lib/job-ingestion/types";
 
 const skillTaxonomy = [
   "excel",
@@ -64,10 +64,22 @@ const famousCompanies = new Set([
 const relevantRoleKeywords = [
   "intern",
   "internship",
+  "co-op",
+  "co op",
   "university",
   "student",
   "new grad",
+  "new graduate",
+  "graduate program",
   "early career",
+  "early talent",
+  "university hire",
+  "campus",
+  "rotational",
+  "development program",
+  "entry level",
+  "entry-level",
+  "associate analyst",
   "analyst",
   "data",
   "operations",
@@ -103,7 +115,7 @@ export function normalizeManualPosting(posting: ManualJobInput, importedAt: stri
   const title = cleanText(posting.title);
   const location = normalizeLocation(cleanText(posting.location));
   const applyUrl = cleanText(posting.applyUrl);
-  const description = normalizeDescription(cleanText(posting.description));
+  const description = normalizeDescription(typeof posting.description === "string" ? posting.description.trim() : "");
   const rawLocation = cleanText(posting.location);
   const sourceJobId = cleanText(posting.sourceJobId) || stableSlug(`${company}-${title}-${applyUrl}`);
   const qualityWarnings = getQualityWarnings({ title, company, applyUrl, location, description });
@@ -134,13 +146,52 @@ export function normalizeManualPosting(posting: ManualJobInput, importedAt: stri
   };
 }
 
+export function normalizeScrapedJobInput(posting: ScrapedJobInput, importedAt: string): IngestedJobRecord | null {
+  const company = cleanText(posting.company);
+  const title = cleanText(posting.title);
+  const rawLocation = cleanText(posting.rawLocation) || cleanText(posting.location);
+  const location = normalizeLocation(rawLocation);
+  const applyUrl = cleanText(posting.applyUrl);
+  const sourceUrl = cleanText(posting.sourceUrl) || applyUrl;
+  const description = normalizeDescription(cleanText(posting.description));
+  const sourceJobId = cleanText(posting.sourceJobId) || stableSlug(`${company}-${title}-${applyUrl}`);
+  const qualityWarnings = getQualityWarnings({ title, company, applyUrl, location, description });
+
+  if (qualityWarnings.some((warning) => warning.startsWith("missing"))) return null;
+
+  const extractionWarning = posting.extractionMethod ? `scraped with ${posting.extractionMethod}` : "scraped from company careers page";
+
+  return {
+    id: createJobId("company_careers", company, sourceJobId),
+    company,
+    title,
+    location,
+    workType: normalizeWorkType(posting.workType) ?? inferWorkType(`${title} ${location} ${description}`),
+    postedDate: normalizeDate(posting.postedDate, importedAt),
+    sponsorshipFriendly: normalizeSponsorship(posting.sponsorshipFriendly) ?? "unknown",
+    competitionLevel: normalizeCompetition(posting.competitionLevel) ?? inferCompetition(company),
+    skills: normalizeSkills(posting.skills, `${title} ${description}`),
+    description,
+    applyUrl,
+    metadata: {
+      source: "company_careers",
+      sourceJobId,
+      sourceUrl,
+      sourceCategory: posting.sourceCategory,
+      importedAt,
+      rawLocation,
+      qualityWarnings: [...qualityWarnings, extractionWarning]
+    }
+  };
+}
+
 function normalizeGreenhousePosting({ config, posting, importedAt }: NormalizerInput): IngestedJobRecord | null {
   if (!config) return null;
   const sourceJobId = stringify(posting.id) || stableSlug(`${config.company}-${stringify(posting.title)}`);
   const title = cleanText(posting.title);
   const rawLocation = getNestedText(posting, ["location", "name"]);
   const location = normalizeLocation(rawLocation);
-  const content = stripHtml(cleanText(posting.content) || cleanText(posting.description));
+  const content = stringValue(posting.content) || stringValue(posting.description);
   const applyUrl = cleanText(posting.absolute_url) || cleanText(posting.url);
   const description = normalizeDescription(content || title);
   const qualityWarnings = getQualityWarnings({ title, company: config.company, applyUrl, location, description });
@@ -158,7 +209,7 @@ function normalizeGreenhousePosting({ config, posting, importedAt }: NormalizerI
     description,
     applyUrl,
     importedAt,
-    textForSkills: `${title} ${content}`
+    textForSkills: `${title} ${stripHtml(content)}`
   });
 }
 
@@ -168,14 +219,21 @@ function normalizeLeverPosting({ config, posting, importedAt }: NormalizerInput)
   const title = cleanText(posting.text) || cleanText(posting.title);
   const rawLocation = getNestedText(posting, ["categories", "location"]) || cleanText(posting.location);
   const location = normalizeLocation(rawLocation);
-  const descriptionPlain = stripHtml(cleanText(posting.descriptionPlain) || cleanText(posting.description));
+  const descriptionPlain = stringValue(posting.descriptionPlain) || stringValue(posting.description);
   const lists = Array.isArray(posting.lists)
     ? posting.lists
-        .map((item) => (item && typeof item === "object" ? cleanText((item as Record<string, unknown>).content) : ""))
-        .join(" ")
+        .map((item) => {
+          if (!item || typeof item !== "object") return "";
+          const record = item as Record<string, unknown>;
+          const heading = cleanText(record.text);
+          const content = stringValue(record.content);
+          return [heading, content].filter(Boolean).join("\n");
+        })
+        .filter(Boolean)
+        .join("\n\n")
     : "";
   const hostedUrl = cleanText(posting.hostedUrl) || cleanText(posting.applyUrl);
-  const description = normalizeDescription(`${descriptionPlain} ${stripHtml(lists)}`.trim() || title);
+  const description = normalizeDescription(`${descriptionPlain}\n\n${lists}`.trim() || title);
   const qualityWarnings = getQualityWarnings({ title, company: config.company, applyUrl: hostedUrl, location, description });
 
   if (qualityWarnings.some((warning) => warning.startsWith("missing"))) return null;
@@ -191,7 +249,7 @@ function normalizeLeverPosting({ config, posting, importedAt }: NormalizerInput)
     description,
     applyUrl: hostedUrl,
     importedAt,
-    textForSkills: `${title} ${descriptionPlain} ${stripHtml(lists)}`
+    textForSkills: `${title} ${stripHtml(descriptionPlain)} ${stripHtml(lists)}`
   });
 }
 
@@ -201,8 +259,8 @@ function normalizeAshbyPosting({ config, posting, importedAt }: NormalizerInput)
   const title = cleanText(posting.title);
   const rawLocation = cleanText(posting.location) || getNestedText(posting, ["location", "name"]);
   const location = normalizeLocation(rawLocation);
-  const descriptionHtml = cleanText(posting.descriptionHtml) || cleanText(posting.description);
-  const description = normalizeDescription(stripHtml(descriptionHtml) || title);
+  const descriptionHtml = stringValue(posting.descriptionHtml) || stringValue(posting.description);
+  const description = normalizeDescription(descriptionHtml || title);
   const applyUrl = cleanText(posting.applyUrl) || cleanText(posting.jobUrl) || cleanText(posting.url);
   const qualityWarnings = getQualityWarnings({ title, company: config.company, applyUrl, location, description });
 
@@ -242,8 +300,8 @@ function normalizeWorkdayPosting({ config, posting, importedAt }: NormalizerInpu
     cleanText(posting.locationsText) ||
     getWorkdayLocationsText(posting.locations);
   const location = normalizeLocation(rawLocation);
-  const descriptionHtml = cleanText(info.jobDescription) || cleanText(info.description) || cleanText(posting.description);
-  const description = normalizeDescription(stripHtml(descriptionHtml) || title);
+  const descriptionHtml = stringValue(info.jobDescription) || stringValue(info.description) || stringValue(posting.description);
+  const description = normalizeDescription(descriptionHtml || title);
   const externalPath = cleanText(posting.externalPath);
   const sourceUrl = getWorkdaySourceUrl(config, externalPath);
   const applyUrl = normalizeUrl(cleanText(info.externalUrl) || cleanText(info.applyUrl) || sourceUrl, config.workday.host);
@@ -283,7 +341,7 @@ function buildRecord({
   importedAt,
   textForSkills
 }: {
-  source: Exclude<JobSource, "mock" | "manual">;
+  source: Exclude<JobSource, "mock" | "manual" | "company_careers">;
   config: JobSourceConfig;
   sourceJobId: string;
   sourceUrl: string;
@@ -342,8 +400,55 @@ export function toUiJob(record: IngestedJobRecord): Job {
 
 export function isRelevantStudentRole(record: IngestedJobRecord) {
   const title = normalizeSearchText(record.title);
-  if (seniorityExclusions.some((keyword) => title.includes(normalizeSearchText(keyword)))) return false;
-  return relevantRoleKeywords.some((keyword) => hasKeyword(title, keyword));
+  const fullText = normalizeSearchText(`${record.title} ${record.description}`);
+  if (hasSeniorityExclusion(title)) return false;
+  const hasRelevantTitle = relevantRoleKeywords.some((keyword) => hasKeyword(title, keyword));
+  const hasStudentSignal = hasExplicitStudentSignal(fullText);
+  if (!hasRelevantTitle && !hasStudentSignal) return false;
+  if (hasHardExperienceRequirement(fullText) && !hasStudentSignal) return false;
+  return true;
+}
+
+function hasSeniorityExclusion(title: string) {
+  return seniorityExclusions.some((keyword) => {
+    const normalized = normalizeSearchText(keyword).trim();
+    if (!normalized) return false;
+    return new RegExp(`(^|\\s)${escapeRegex(normalized)}(\\s|$)`).test(title);
+  });
+}
+
+function hasExplicitStudentSignal(text: string) {
+  return [
+    "intern",
+    "internship",
+    "co op",
+    "co-op",
+    "student",
+    "university",
+    "campus",
+    "new grad",
+    "new graduate",
+    "early career",
+    "early talent",
+    "graduate program",
+    "rotational",
+    "development program",
+    "entry level",
+    "entry-level"
+  ].some((term) => hasKeyword(text, term));
+}
+
+function hasHardExperienceRequirement(text: string) {
+  const protectedText = text.replace(/\b0\s*-\s*[2-9]\s+years?\b/g, "0 years").replace(/\b0\s+to\s+[2-9]\s+years?\b/g, "0 years");
+  const patterns = [
+    /\b(?:minimum|min|at least|required|requires|requirement)\s+(?:of\s+)?(?:[2-9]|[1-9]\d)\+?\s+years?\b.{0,90}\bexperience\b/i,
+    /\b(?:[2-9]|[1-9]\d)\+?\s+years?\s+(?:of\s+)?(?:professional\s+|relevant\s+|work\s+|industry\s+)?experience\b/i,
+    /\bexperience\s+(?:of|with)\s+(?:[2-9]|[1-9]\d)\+?\s+years?\b/i,
+    /\b(?:[2-9]|[1-9]\d)\+?\s+years?\s+in\s+(?:a\s+)?(?:professional|similar|related|relevant)\b/i,
+    /\bprofessional\s+experience\s+required\b/i
+  ];
+
+  return patterns.some((pattern) => pattern.test(protectedText));
 }
 
 function getQualityWarnings({
@@ -418,12 +523,43 @@ function normalizeLocation(value: string) {
 }
 
 function normalizeDescription(value: string) {
-  const cleaned = cleanText(stripHtml(value));
-  return cleaned.slice(0, 12000).trim();
+  return formatJobDescription(value).slice(0, 12000).trim();
 }
 
 function stripHtml(value: string) {
-  return decodeHtmlEntities(value).replace(/<[^>]+>/g, " ");
+  return cleanText(formatJobDescription(value));
+}
+
+function formatJobDescription(value: string) {
+  const withoutUnsafe = decodeHtmlEntities(value)
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ");
+
+  const withStructure = withoutUnsafe
+    .replace(/<(h[1-6])[^>]*>/gi, "\n\n")
+    .replace(/<\/h[1-6]>/gi, "\n\n")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>/gi, "\n\n")
+    .replace(/<p[^>]*>/gi, "")
+    .replace(/<\/div>/gi, "\n")
+    .replace(/<div[^>]*>/gi, "")
+    .replace(/<\/section>/gi, "\n\n")
+    .replace(/<section[^>]*>/gi, "")
+    .replace(/<\/ul>|<\/ol>/gi, "\n")
+    .replace(/<ul[^>]*>|<ol[^>]*>/gi, "\n")
+    .replace(/<li[^>]*>/gi, "\n- ")
+    .replace(/<\/li>/gi, "")
+    .replace(/<strong[^>]*>|<b[^>]*>/gi, "")
+    .replace(/<\/strong>|<\/b>/gi, "")
+    .replace(/<[^>]+>/g, " ");
+
+  return withStructure
+    .split("\n")
+    .map((line) => line.replace(/[ \t]+/g, " ").trim())
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/(?:^|\n)-\s*(?=\n|$)/g, "\n")
+    .trim();
 }
 
 function getNestedText(record: RawPosting, path: string[]) {
@@ -462,6 +598,10 @@ function getWorkdayLocationsText(value: unknown) {
 function cleanText(value: unknown) {
   if (typeof value !== "string") return "";
   return value.replace(/\s+/g, " ").trim();
+}
+
+function stringValue(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
 }
 
 function stringify(value: unknown) {

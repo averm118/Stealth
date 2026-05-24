@@ -3,6 +3,7 @@ import type { RawPosting } from "@/lib/job-ingestion/types";
 
 const requestTimeoutMs = 12000;
 const sourceConcurrency = 4;
+const defaultWorkdaySearchTerms = ["intern", "co-op", "university", "new grad", "early career", "graduate", "analyst"];
 
 export async function fetchApprovedSourcePostings(configs: JobSourceConfig[] = approvedJobSources) {
   const enabled = configs.filter((config) => config.enabled);
@@ -78,29 +79,32 @@ async function fetchWorkday(config: JobSourceConfig) {
   const host = config.workday.host.replace(/\/+$/, "");
   const jobsUrl = `${host}/wday/cxs/${config.workday.tenant}/${config.workday.site}/jobs`;
   const postings: RawPosting[] = [];
+  const searchTerms = getWorkdaySearchTerms(config);
 
-  for (let page = 0; page < maxPages; page += 1) {
-    const offset = page * pageLimit;
-    const data = await fetchJson(jobsUrl, {
-      method: "POST",
-      body: {
-        appliedFacets: {},
-        limit: pageLimit,
-        offset,
-        searchText: config.workday.searchText ?? ""
-      }
-    });
-    const pagePostings = getArray(data, "jobPostings");
+  for (const searchText of searchTerms) {
+    for (let page = 0; page < maxPages; page += 1) {
+      const offset = page * pageLimit;
+      const data = await fetchJson(jobsUrl, {
+        method: "POST",
+        body: {
+          appliedFacets: {},
+          limit: pageLimit,
+          offset,
+          searchText
+        }
+      });
+      const pagePostings = getArray(data, "jobPostings");
 
-    if (!pagePostings.length) break;
+      if (!pagePostings.length) break;
 
-    const enrichedPostings = await Promise.all(pagePostings.map((posting) => attachWorkdayDetail(posting, host, config)));
-    postings.push(...enrichedPostings);
+      const enrichedPostings = await Promise.all(pagePostings.map((posting) => attachWorkdayDetail(posting, host, config)));
+      postings.push(...enrichedPostings);
 
-    if (pagePostings.length < pageLimit) break;
+      if (pagePostings.length < pageLimit) break;
+    }
   }
 
-  return postings;
+  return dedupeRawPostings(postings);
 }
 
 async function attachWorkdayDetail(posting: RawPosting, host: string, config: JobSourceConfig): Promise<RawPosting> {
@@ -168,6 +172,16 @@ function looksRelevantStudentPosting(posting: RawPosting) {
     "student",
     "university",
     "new grad",
+    "new graduate",
+    "graduate program",
+    "early career",
+    "early talent",
+    "university hire",
+    "campus",
+    "rotational",
+    "development program",
+    "entry level",
+    "associate analyst",
     "analyst",
     "operations",
     "supply chain",
@@ -175,6 +189,31 @@ function looksRelevantStudentPosting(posting: RawPosting) {
     "logistics",
     "data"
   ].some((term) => text.includes(term));
+}
+
+function getWorkdaySearchTerms(config: JobSourceConfig) {
+  const configured = config.workday?.searchTerms?.length ? config.workday.searchTerms : [];
+  const legacy = config.workday?.searchText ? [config.workday.searchText] : [];
+  return [...new Set([...configured, ...legacy, ...defaultWorkdaySearchTerms].map((term) => term.trim()).filter(Boolean))];
+}
+
+function dedupeRawPostings(postings: RawPosting[]) {
+  const seen = new Set<string>();
+  const deduped: RawPosting[] = [];
+
+  for (const posting of postings) {
+    const key =
+      getString(posting, "id") ||
+      getString(posting, "jobId") ||
+      getString(posting, "jobReqId") ||
+      getString(posting, "externalPath") ||
+      `${getString(posting, "title")}::${getString(posting, "locationsText")}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(posting);
+  }
+
+  return deduped;
 }
 
 function requireBoardToken(config: JobSourceConfig) {

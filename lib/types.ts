@@ -4,7 +4,7 @@ export type CompetitionLevel = "low" | "medium" | "high";
 export type SavedStatus = "saved" | "applied" | "interview" | "rejected" | "offer";
 export type SignalConfidence = "low" | "medium" | "high";
 export type LookingFor = "Full-time job" | "Part-time job" | "Internship";
-export type JobSource = "mock" | "greenhouse" | "lever" | "ashby" | "workday" | "manual";
+export type JobSource = "mock" | "greenhouse" | "lever" | "ashby" | "workday" | "manual" | "company_careers";
 export type JobSourceCategory = "tech" | "ai-software" | "logistics" | "retail" | "manufacturing" | "finance" | "operations";
 
 export type Job = {
@@ -93,4 +93,13 @@ export type AiJobAnalysis = MatchResult & {
   applicationStrategy: string;
   source: "openrouter" | "local_fallback";
   generatedAt: string;
+};
+
+export type AiDashboardJobMatch = {
+  jobId: string;
+  confidence: SignalConfidence;
+  reason: string;
+  matchedSignals: string[];
+  riskFlags: string[];
+  source: "openrouter";
 };
