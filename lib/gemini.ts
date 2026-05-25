@@ -6,7 +6,7 @@ type GeminiMessage = {
 };
 
 type GeminiJsonOptions = {
-  task: "profile" | "match";
+  task: "profile" | "match" | "tailor" | "cover_letter";
   messages: GeminiMessage[];
   schemaName: string;
   schema: Record<string, unknown>;
@@ -18,6 +18,8 @@ type PayloadMode = "structured" | "json" | "plain";
 
 const geminiApiBaseUrl = "https://generativelanguage.googleapis.com/v1beta/models";
 const defaultModel = "gemini-3.5-flash";
+const defaultQuotaCooldownMs = 60_000;
+const quotaCooldowns = new Map<string, number>();
 
 export async function callGeminiJson<T>({
   task,
@@ -30,21 +32,36 @@ export async function callGeminiJson<T>({
   const apiKey = getEnvValue("GEMINI_API_KEY");
   if (!apiKey) throw new Error("Missing GEMINI_API_KEY in the server environment.");
 
-  const model = selectModel(task);
+  const models = selectModels(task);
   const attempts: string[] = [];
 
-  for (const mode of ["structured", "json", "plain"] satisfies PayloadMode[]) {
-    try {
-      return await postGeminiJson<T>({
-        apiKey,
-        model,
-        payload: buildPayload({ mode, messages, schemaName, schema, maxTokens }),
-        task,
-        timeoutMs
-      });
-    } catch (error) {
-      attempts.push(`${mode}: ${formatGeminiError(error)}`);
-      if (!shouldTryAnotherMode(error, mode)) break;
+  for (const model of models) {
+    const cooldownKey = `${task}:${model}`;
+    const cooldownUntil = quotaCooldowns.get(cooldownKey) ?? 0;
+
+    if (cooldownUntil > Date.now()) {
+      const secondsRemaining = Math.ceil((cooldownUntil - Date.now()) / 1000);
+      attempts.push(`${model}: cooling down for ${secondsRemaining}s`);
+      continue;
+    }
+
+    for (const mode of ["structured", "json", "plain"] satisfies PayloadMode[]) {
+      try {
+        return await postGeminiJson<T>({
+          apiKey,
+          model,
+          payload: buildPayload({ mode, messages, schemaName, schema, maxTokens }),
+          task,
+          timeoutMs
+        });
+      } catch (error) {
+        attempts.push(`${model}/${mode}: ${formatGeminiError(error)}`);
+        if (error instanceof GeminiRequestError && error.status === 429) {
+          quotaCooldowns.set(cooldownKey, Date.now() + (error.retryAfterMs ?? defaultQuotaCooldownMs));
+          break;
+        }
+        if (!shouldTryAnotherMode(error, mode)) break;
+      }
     }
   }
 
@@ -82,7 +99,7 @@ async function postGeminiJson<T>({
 
     if (!response.ok) {
       const details = await response.text();
-      throw new GeminiRequestError(task, response.status, details);
+      throw new GeminiRequestError(task, response.status, details, parseRetryAfterMs(response.headers.get("retry-after")));
     }
 
     const data = (await response.json()) as {
@@ -129,7 +146,7 @@ function buildPayload({
 
   if (mode === "structured") {
     generationConfig.responseMimeType = "application/json";
-    generationConfig.responseSchema = schema;
+    generationConfig.responseSchema = toGeminiResponseSchema(schema);
   } else if (mode === "json") {
     generationConfig.responseMimeType = "application/json";
   }
@@ -165,12 +182,12 @@ function formatMessages(messages: GeminiMessage[]) {
 function shouldTryAnotherMode(error: unknown, mode: PayloadMode) {
   if (mode === "plain") return false;
   if (!(error instanceof GeminiRequestError)) return true;
+  if (error.status === 429) return false;
 
   const details = error.details.toLowerCase();
   return (
     error.status === 400 ||
     error.status === 422 ||
-    error.status === 429 ||
     details.includes("responseschema") ||
     details.includes("response_schema") ||
     details.includes("responsemime") ||
@@ -181,22 +198,62 @@ function shouldTryAnotherMode(error: unknown, mode: PayloadMode) {
   );
 }
 
+function toGeminiResponseSchema(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(toGeminiResponseSchema);
+  if (!value || typeof value !== "object") return value;
+
+  const cleaned: Record<string, unknown> = {};
+  const unsupportedKeys = new Set([
+    "additionalProperties",
+    "minimum",
+    "maximum",
+    "minLength",
+    "maxLength",
+    "minItems",
+    "maxItems",
+    "pattern",
+    "$schema"
+  ]);
+
+  for (const [key, item] of Object.entries(value)) {
+    if (unsupportedKeys.has(key)) continue;
+    cleaned[key] = toGeminiResponseSchema(item);
+  }
+
+  return cleaned;
+}
+
 class GeminiRequestError extends Error {
   constructor(
     task: GeminiJsonOptions["task"],
     readonly status: number,
-    readonly details: string
+    readonly details: string,
+    readonly retryAfterMs?: number
   ) {
     super(`Gemini ${task} request failed (${status}): ${details.slice(0, 240)}`);
   }
 }
 
-function selectModel(task: GeminiJsonOptions["task"]) {
-  if (task === "profile") {
-    return getEnvValue("GEMINI_PROFILE_MODEL") ?? getEnvValue("GEMINI_MODEL") ?? defaultModel;
-  }
+function parseRetryAfterMs(value: string | null) {
+  if (!value) return undefined;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds) && seconds > 0) return seconds * 1000;
 
-  return getEnvValue("GEMINI_MATCH_MODEL") ?? getEnvValue("GEMINI_MODEL") ?? defaultModel;
+  const date = Date.parse(value);
+  if (!Number.isNaN(date)) return Math.max(0, date - Date.now());
+
+  return undefined;
+}
+
+function selectModels(task: GeminiJsonOptions["task"]) {
+  const taskModel =
+    task === "profile"
+      ? getEnvValue("GEMINI_PROFILE_MODEL")
+      : getEnvValue("GEMINI_MATCH_MODEL");
+  const globalModel = getEnvValue("GEMINI_MODEL") ?? defaultModel;
+  const fallbackModels = getEnvList("GEMINI_FALLBACK_MODELS");
+
+  return uniqueStrings([taskModel, globalModel, ...fallbackModels, defaultModel]);
 }
 
 function normalizeModelName(model: string) {
@@ -206,6 +263,17 @@ function normalizeModelName(model: string) {
 function getEnvValue(key: string) {
   const value = process.env[key]?.trim();
   return value || undefined;
+}
+
+function getEnvList(key: string) {
+  return (process.env[key] ?? "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+}
+
+function uniqueStrings(values: Array<string | undefined>) {
+  return [...new Set(values.filter((value): value is string => Boolean(value)))];
 }
 
 export function parseJsonContent(content: string) {

@@ -37,6 +37,7 @@ GEMINI_API_KEY=your_gemini_api_key_here
 GEMINI_MODEL=gemini-3.5-flash
 GEMINI_PROFILE_MODEL=gemini-3.5-flash
 GEMINI_MATCH_MODEL=gemini-3.5-flash
+GEMINI_FALLBACK_MODELS=gemini-2.5-flash
 NEXT_PUBLIC_APP_URL=http://localhost:3000
 NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
@@ -50,7 +51,7 @@ SCRAPER_SHARD_INDEX=0
 SCRAPER_SHARD_TOTAL=4
 ```
 
-Gemini powers resume profile extraction and one-job compatibility analysis. Radar remains deterministic and does not call AI.
+Gemini powers resume profile extraction, one-job compatibility analysis, resume tailoring, and cover letters. If the primary Gemini model hits quota, Stealth tries `GEMINI_FALLBACK_MODELS` before using the local fallback. Radar remains deterministic and does not call AI.
 
 Run the development server:
 

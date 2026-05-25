@@ -2,9 +2,11 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { ArrowLeft, Bookmark, Check, ExternalLink, Loader2, MapPin, RefreshCcw, Sparkles } from "lucide-react";
+import { ArrowLeft, ExternalLink, Loader2, MapPin } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useAppState } from "@/components/app-state";
+import { CoverLetterButton } from "@/components/cover-letter/cover-letter-button";
+import { TailorResumeButton } from "@/components/resume-tailor/tailor-resume-button";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Reveal, Stagger, StaggerItem } from "@/components/motion-primitives";
@@ -31,8 +33,6 @@ export default function JobDetailPage() {
   const match = aiAnalysis;
   const currentStatus = job ? savedJobs[job.id] ?? "saved" : "saved";
   const fitLabel = match ? (match.score >= 82 ? "Apply now" : match.score >= 68 ? "Strong fit" : match.score >= 52 ? "Review carefully" : "Low fit") : "";
-  const missingSkills = match?.missingSkills.length ? match.missingSkills.join(", ") : "";
-  const matchedSkills = match?.matchedSkills.length ? match.matchedSkills.join(", ") : "";
   const scoreLabel = match ? `${match.source.replace("_", " ")} analysis` : "Reading your resume against this role...";
 
   useEffect(() => {
@@ -152,20 +152,20 @@ export default function JobDetailPage() {
         </div>
       </Reveal>
 
-      <div className="grid gap-6 lg:grid-cols-[1.05fr_0.95fr] lg:items-start">
+      <div className="grid gap-6 lg:grid-cols-[1.08fr_0.92fr] lg:items-start">
         <div className="space-y-6">
           <Reveal>
-            <Card className="p-8 md:p-10">
-              <div className="flex flex-col gap-8 xl:flex-row xl:items-start xl:justify-between">
-                <div className="max-w-2xl">
+            <Card className="p-7 md:p-9">
+              <div className="flex flex-col gap-6 xl:flex-row xl:items-start xl:justify-between">
+                <div className="max-w-3xl">
                   <div className="flex items-center gap-3">
                     <CompanyMark company={job.company} />
                     <div>
                       <p className="text-sm font-medium text-[#5661d8]">{job.company}</p>
-                      <p className="mt-0.5 text-xs text-[#8a92a0]">Mock posting - demo data</p>
+                      <p className="mt-0.5 text-xs text-[#8a92a0]">Opportunity brief</p>
                     </div>
                   </div>
-                  <h1 className="mt-6 text-5xl font-semibold leading-[0.98] tracking-[-0.055em] text-[#171b24] md:text-6xl">
+                  <h1 className="mt-6 max-w-3xl text-4xl font-semibold leading-[1.02] tracking-[-0.055em] text-[#171b24] md:text-5xl">
                     {job.title}
                   </h1>
                   <div className="mt-6 flex flex-wrap gap-x-5 gap-y-2 text-sm text-[#687180]">
@@ -178,66 +178,43 @@ export default function JobDetailPage() {
                   </div>
                 </div>
 
-                <div className="min-w-44">
-                  <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#9aa1ad]">Fit score</p>
+                <div className="w-full rounded-[28px] border border-black/[0.06] bg-white/65 p-5 shadow-sm xl:w-52">
                   {match ? (
                     <>
+                      <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#9aa1ad]">Fit</p>
                       <div className="mt-2 flex items-end gap-2">
-                        <span className="text-6xl font-semibold tracking-[-0.06em] text-[#171b24]">{match.score}</span>
+                        <span className="text-5xl font-semibold tracking-[-0.06em] text-[#171b24]">{match.score}</span>
                         <span className="pb-2 text-sm font-medium text-[#8a92a0]">/100</span>
-                      </div>
-                      <div className="mt-4 h-2 overflow-hidden rounded-full bg-black/[0.06]">
-                        <div className="h-full rounded-full bg-[#626eea]" style={{ width: `${match.score}%` }} />
                       </div>
                       <p className="mt-3 text-sm font-medium text-[#5661d8]">{fitLabel}</p>
                     </>
                   ) : (
-                    <div className="mt-5 flex items-center gap-3 rounded-[22px] border border-black/[0.06] bg-white/70 px-4 py-4 shadow-sm">
+                    <div className="flex items-center gap-3">
                       <Loader2 className="animate-spin text-[#5661d8]" size={22} />
                       <div>
                         <p className="text-sm font-medium text-[#171b24]">Analyzing fit</p>
-                        <p className="mt-0.5 text-xs text-[#8a92a0]">AI score loading</p>
                       </div>
                     </div>
                   )}
-                  <p className="mt-1 text-xs text-[#8a92a0]">{scoreLabel}</p>
-                  <p className="mt-2 max-w-44 text-xs leading-5 text-[#9aa1ad]">
-                    Based on your uploaded resume and this job description.
-                  </p>
+                  <p className="mt-2 text-xs leading-5 text-[#8a92a0]">{scoreLabel}</p>
                 </div>
               </div>
 
-              <div className="my-9 h-px bg-black/[0.06]" />
-
-              <DescriptionBlock
-                description={job.description}
-                highlights={match?.jobHighlights ?? []}
-                loading={!match}
-                expanded={isDescriptionExpanded}
-                onToggle={() => setIsDescriptionExpanded((current) => !current)}
-              />
-
-              <div className="mt-10 grid gap-5 sm:grid-cols-3">
+              <div className="mt-8 grid gap-5 sm:grid-cols-3">
                 <BriefMetric label="Sponsorship" value={job.sponsorshipFriendly} />
                 <BriefMetric label="Competition" value={job.competitionLevel} />
                 <BriefMetric label="Status" value={currentStatus} />
               </div>
 
-              <div className="mt-10 flex flex-col gap-3 sm:flex-row">
+              <div className="mt-8 flex flex-col gap-3 sm:flex-row">
                 <Button asChild size="lg">
                   <a href={job.applyUrl} target="_blank" rel="noreferrer">
                     Apply
                     <ExternalLink size={16} />
                   </a>
                 </Button>
-                <Button variant="outline" size="lg" onClick={() => setJobStatus(job.id, "saved")}>
-                  <Bookmark size={16} />
-                  Save to tracker
-                </Button>
-                <Button variant="outline" size="lg" onClick={() => void loadAiAnalysis({ refresh: true })} disabled={isScoring}>
-                  {isScoring ? <Loader2 className="animate-spin" size={16} /> : <RefreshCcw size={16} />}
-                  Refresh AI analysis
-                </Button>
+                <TailorResumeButton job={job} profile={profile} />
+                <CoverLetterButton job={job} profile={profile} />
               </div>
               {match?.confidence === "low" && (
                 <p className="mt-4 rounded-2xl border border-amber-200/70 bg-amber-50/70 px-4 py-3 text-sm leading-6 text-amber-800">
@@ -249,85 +226,61 @@ export default function JobDetailPage() {
           </Reveal>
 
           <Reveal delay={0.08}>
-            <Card className="p-8">
-              <div className="flex items-center gap-2">
-                <Sparkles size={17} className="text-[#5661d8]" />
-                <h2 className="text-xl font-semibold tracking-[-0.03em] text-[#171b24]">Application strategy</h2>
-              </div>
-              <p className="mt-5 rounded-[24px] border border-black/[0.06] bg-white/65 p-5 text-sm leading-7 text-[#4d5665] shadow-sm">
-                {match ? match.applicationStrategy : "Reading your resume against this role before recommending an application angle."}
-              </p>
-              <div className="mt-3 divide-y divide-black/[0.06]">
-                <DetailRow label="Lead with" value={matchedSkills || "AI analysis loading"} />
-                <DetailRow label="Mind the gap" value={missingSkills || "AI analysis loading"} positive={Boolean(match && !match.missingSkills.length)} />
-                <DetailRow label="Resume keywords" value={match ? match.suggestedKeywords.join(", ") : "AI analysis loading"} />
-              </div>
+            <Card className="p-7 md:p-8">
+              <DescriptionBlock
+                description={job.description}
+                highlights={match?.jobHighlights ?? []}
+                loading={!match}
+                expanded={isDescriptionExpanded}
+                onToggle={() => setIsDescriptionExpanded((current) => !current)}
+              />
             </Card>
           </Reveal>
         </div>
 
-        <Stagger className="space-y-6 lg:sticky lg:top-32">
+        <Stagger className="space-y-5 lg:sticky lg:top-32">
           <StaggerItem>
-            <Card className="p-8">
+            <Card className="p-7">
               <div className="flex items-center justify-between gap-4">
-                <h2 className="text-2xl font-semibold tracking-[-0.04em] text-[#171b24]">Compatibility</h2>
+                <h2 className="text-xl font-semibold tracking-[-0.04em] text-[#171b24]">Compatibility</h2>
                 {!match && <Loader2 className="animate-spin text-[#5661d8]" size={18} />}
               </div>
               {match ? (
                 <>
-                  <div className="mt-6 space-y-4">
-                    <BreakdownRow label="Skills" factor={match.scoreBreakdown.skillFit} />
-                    <BreakdownRow label="Role" factor={match.scoreBreakdown.roleFit} />
-                    <BreakdownRow label="Projects" factor={match.scoreBreakdown.projectEvidence} />
-                    <BreakdownRow label="Visa" factor={match.scoreBreakdown.sponsorshipFit} />
-                    <BreakdownRow label="Readiness" factor={match.scoreBreakdown.competitionReadiness} />
-                  </div>
-                  <div className="mt-7 space-y-4 border-t border-black/[0.06] pt-6">
-                    {match.why.map((reason, index) => (
-                      <ReasonLine key={reason} index={index + 1} text={reason} />
-                    ))}
+                  <p className="mt-3 text-sm leading-6 text-[#687180]">
+                    {match.why[0] ?? "Based on your uploaded resume and this job description."}
+                  </p>
+                  <div className="mt-6 divide-y divide-black/[0.06]">
+                    <CompactBreakdownRow label="Role" factor={match.scoreBreakdown.roleFit} />
+                    <CompactBreakdownRow label="Experience" factor={match.scoreBreakdown.projectEvidence} />
+                    <CompactBreakdownRow label="Visa" factor={match.scoreBreakdown.sponsorshipFit} />
                   </div>
                 </>
               ) : (
-                <AnalysisLoadingState />
-              )}
-            </Card>
-          </StaggerItem>
-
-          <StaggerItem>
-            <Card className="p-8">
-              <h2 className="text-2xl font-semibold tracking-[-0.04em] text-[#171b24]">Resume evidence</h2>
-              {match ? (
-                <div className="mt-6 space-y-4">
-                  {match.matchedEvidence.map((evidence, index) => (
-                    <EvidenceLine key={evidence} index={index + 1} text={evidence} />
-                  ))}
-                </div>
-              ) : (
                 <AnalysisLoadingState compact />
               )}
             </Card>
           </StaggerItem>
 
           <StaggerItem>
-            <Card className="p-8">
-              <h2 className="text-2xl font-semibold tracking-[-0.04em] text-[#171b24]">Gaps</h2>
-              {match ? (
-                <div className="mt-6 space-y-4">
-                  {match.gaps.map((gap, index) => (
-                    <EvidenceLine key={gap} index={index + 1} text={gap} muted />
-                  ))}
+            <Card className="p-7">
+              <h2 className="text-xl font-semibold tracking-[-0.04em] text-[#171b24]">Application note</h2>
+              <p className="mt-4 text-sm leading-7 text-[#4d5665]">
+                {match ? match.applicationStrategy : "Reading your resume against this role before recommending an application angle."}
+              </p>
+              {match && (
+                <div className="mt-5 grid gap-4 border-t border-black/[0.06] pt-5">
+                  <ConciseList title="Evidence" items={match.matchedEvidence.slice(0, 2)} />
+                  <ConciseList title="Gaps" items={match.gaps.slice(0, 2)} muted />
                 </div>
-              ) : (
-                <AnalysisLoadingState compact />
               )}
             </Card>
           </StaggerItem>
 
           <StaggerItem>
-            <Card className="p-8">
+            <Card className="p-7">
               <div className="flex items-center justify-between gap-4">
-                <h2 className="text-2xl font-semibold tracking-[-0.04em] text-[#171b24]">Tracker</h2>
+                <h2 className="text-xl font-semibold tracking-[-0.04em] text-[#171b24]">Tracker</h2>
                 <span className="rounded-full border border-black/[0.06] bg-white px-3 py-1 text-xs font-medium capitalize text-[#687180] shadow-sm">
                   {currentStatus}
                 </span>
@@ -347,28 +300,6 @@ export default function JobDetailPage() {
                   >
                     {status}
                   </button>
-                ))}
-              </div>
-            </Card>
-          </StaggerItem>
-
-          <StaggerItem>
-            <Card className="p-8">
-              <h2 className="text-2xl font-semibold tracking-[-0.04em] text-[#171b24]">Role skills</h2>
-              <div className="mt-5 flex flex-wrap gap-2">
-                {job.skills.map((skill) => (
-                  <span
-                    key={skill}
-                    className={cn(
-                      "rounded-full border px-3 py-1.5 text-sm",
-                      match?.matchedSkills.includes(skill)
-                        ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                        : "border-black/[0.06] bg-white/60 text-[#687180]"
-                    )}
-                  >
-                    {match?.matchedSkills.includes(skill) && <Check className="mr-1 inline" size={13} />}
-                    {skill}
-                  </span>
                 ))}
               </div>
             </Card>
@@ -409,7 +340,7 @@ function AnalysisLoadingState({ compact = false }: Readonly<{ compact?: boolean 
         <Loader2 className="animate-spin text-[#5661d8]" size={18} />
         <div>
           <p className="text-sm font-medium text-[#171b24]">Reading your resume against this role</p>
-          {!compact && <p className="mt-1 text-sm leading-6 text-[#687180]">The AI analysis will appear here when it is ready.</p>}
+          {!compact && <p className="mt-1 text-sm leading-6 text-[#687180]">The summary will appear here when it is ready.</p>}
         </div>
       </div>
       {!compact && (
@@ -458,26 +389,33 @@ function DescriptionBlock({
 
   return (
     <section>
-      <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#9aa1ad]">Role brief</p>
+      <div className="flex items-center justify-between gap-4">
+        <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#9aa1ad]">Role brief</p>
+        {cleanDescription.length > 0 && (
+          <button
+            type="button"
+            onClick={onToggle}
+            className="rounded-full border border-black/[0.06] bg-white/70 px-3 py-1.5 text-xs font-medium text-[#171b24] shadow-sm transition hover:bg-white"
+          >
+            {expanded ? "Hide description" : "Read more"}
+          </button>
+        )}
+      </div>
       {loading ? (
-        <div className="mt-4 rounded-[24px] border border-black/[0.06] bg-white/65 p-5 shadow-sm">
+        <div className="mt-4 rounded-[22px] border border-black/[0.06] bg-white/65 p-5 shadow-sm">
           <div className="flex items-center gap-3">
             <Loader2 className="animate-spin text-[#5661d8]" size={18} />
-            <p className="text-sm font-medium text-[#171b24]">Extracting important job details</p>
+            <p className="text-sm font-medium text-[#171b24]">Summarizing role details</p>
           </div>
-          <div className="mt-5 space-y-3">
+          <div className="mt-4 space-y-3">
             <span className="block h-3 w-5/6 animate-pulse rounded-full bg-black/[0.06]" />
             <span className="block h-3 w-2/3 animate-pulse rounded-full bg-black/[0.06]" />
-            <span className="block h-3 w-4/5 animate-pulse rounded-full bg-black/[0.06]" />
           </div>
         </div>
       ) : (
-        <ul className="mt-4 space-y-3">
-          {highlights.map((highlight) => (
-            <li
-              key={highlight}
-              className="rounded-[22px] border border-black/[0.06] bg-white/65 px-5 py-4 text-sm leading-6 text-[#4d5665] shadow-sm"
-            >
+        <ul className="mt-4 divide-y divide-black/[0.06] rounded-[24px] border border-black/[0.06] bg-white/55 px-5 shadow-sm">
+          {highlights.slice(0, 4).map((highlight) => (
+            <li key={highlight} className="py-4 text-sm leading-6 text-[#4d5665]">
               {highlight}
             </li>
           ))}
@@ -492,15 +430,6 @@ function DescriptionBlock({
         </div>
       )}
 
-      {cleanDescription.length > 0 && (
-        <button
-          type="button"
-          onClick={onToggle}
-          className="mt-5 rounded-full border border-black/[0.06] bg-white/70 px-4 py-2 text-sm font-medium text-[#171b24] shadow-sm transition hover:-translate-y-0.5 hover:bg-white"
-        >
-          {expanded ? "Hide original description" : "View original description"}
-        </button>
-      )}
     </section>
   );
 }
@@ -643,55 +572,31 @@ function BriefMetric({ label, value }: Readonly<{ label: string; value: string }
   );
 }
 
-function DetailRow({ label, value, positive = false }: Readonly<{ label: string; value: string; positive?: boolean }>) {
+function CompactBreakdownRow({ label, factor }: Readonly<{ label: string; factor: { score: number; reason: string } }>) {
   return (
-    <div className="grid gap-3 py-5 sm:grid-cols-[150px_1fr]">
-      <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#9aa1ad]">{label}</p>
-      <p className={cn("text-sm leading-6 text-[#4d5665]", positive && "text-emerald-700")}>{value}</p>
-    </div>
-  );
-}
-
-function BreakdownRow({ label, factor }: Readonly<{ label: string; factor: { score: number; reason: string } }>) {
-  return (
-    <div className="rounded-[22px] border border-black/[0.06] bg-white/65 p-4 shadow-sm">
-      <div className="flex items-center justify-between gap-4">
+    <div className="py-4">
+      <div className="flex items-center justify-between gap-5">
         <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#9aa1ad]">{label}</p>
         <span className="text-sm font-semibold text-[#171b24]">{factor.score}</span>
       </div>
-      <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-black/[0.06]">
-        <div className="h-full rounded-full bg-[#626eea]" style={{ width: `${factor.score}%` }} />
-      </div>
-      <p className="mt-3 text-sm leading-6 text-[#5f6877]">{factor.reason}</p>
+      <p className="mt-2 text-sm leading-6 text-[#5f6877]">{factor.reason}</p>
     </div>
   );
 }
 
-function ReasonLine({ index, text }: Readonly<{ index: number; text: string }>) {
-  return (
-    <div className="grid grid-cols-[32px_1fr] gap-4">
-      <span className="grid h-8 w-8 place-items-center rounded-full border border-black/[0.06] bg-white text-xs font-medium text-[#5661d8] shadow-sm">
-        {index}
-      </span>
-      <p className="pt-1 text-sm leading-6 text-[#5f6877]">{text}</p>
-    </div>
-  );
-}
+function ConciseList({ title, items, muted = false }: Readonly<{ title: string; items: string[]; muted?: boolean }>) {
+  if (!items.length) return null;
 
-function EvidenceLine({ index, text, muted = false }: Readonly<{ index: number; text: string; muted?: boolean }>) {
   return (
-    <div className="grid grid-cols-[32px_1fr] gap-4">
-      <span
-        className={cn(
-          "grid h-8 w-8 place-items-center rounded-full border text-xs font-medium shadow-sm",
-          muted
-            ? "border-black/[0.06] bg-white text-[#8a92a0]"
-            : "border-emerald-200 bg-emerald-50 text-emerald-700"
-        )}
-      >
-        {muted ? index : <Check size={14} />}
-      </span>
-      <p className="pt-1 text-sm leading-6 text-[#5f6877]">{text}</p>
+    <div>
+      <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#9aa1ad]">{title}</p>
+      <ul className="mt-2 space-y-2">
+        {items.map((item) => (
+          <li key={item} className={cn("text-sm leading-6", muted ? "text-[#687180]" : "text-[#4d5665]")}>
+            {item}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

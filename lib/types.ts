@@ -103,3 +103,29 @@ export type AiDashboardJobMatch = {
   riskFlags: string[];
   source: "gemini";
 };
+
+export type ResumeBulletRewrite = {
+  original: string;
+  rewrite: string;
+  reason: string;
+};
+
+export type TailoredResumeResult = {
+  score: number;
+  missingKeywords: string[];
+  suggestedSkills: string[];
+  bulletRewrites: ResumeBulletRewrite[];
+  atsNotes: string[];
+  tailoredResumeText: string;
+  source: "gemini" | "original_resume";
+  generatedAt: string;
+};
+
+export type CoverLetterResult = {
+  score: number;
+  talkingPoints: string[];
+  toneNotes: string[];
+  coverLetterText: string;
+  source: "gemini";
+  generatedAt: string;
+};

@@ -237,7 +237,7 @@ Main files:
 
 Current behavior:
 - Server-side Gemini call using `GEMINI_API_KEY`.
-- Supports task-specific models through `GEMINI_PROFILE_MODEL`, falling back to `GEMINI_MODEL`.
+- Supports task-specific models through `GEMINI_PROFILE_MODEL`, falling back to `GEMINI_MODEL`, then `GEMINI_FALLBACK_MODELS`.
 - The current direct Gemini model is `gemini-3.5-flash`; it uses JSON response formatting with server-side validation and a plain-JSON retry when structured output is unavailable.
 - Uses deterministic prompt instructions where supported plus a versioned prompt/cache key through `PROFILE_EXTRACTION_VERSION`.
 - Strict JSON schema response for the `CandidateProfile` shape.
@@ -472,6 +472,7 @@ GEMINI_API_KEY=your_gemini_api_key_here
 GEMINI_MODEL=gemini-3.5-flash
 GEMINI_PROFILE_MODEL=gemini-3.5-flash
 GEMINI_MATCH_MODEL=gemini-3.5-flash
+GEMINI_FALLBACK_MODELS=gemini-2.5-flash
 NEXT_PUBLIC_APP_URL=http://localhost:3000
 ```
 
