@@ -36,8 +36,8 @@ export default function SettingsPage() {
       </Card>
       </Reveal>
       <Stagger className="grid gap-5 md:grid-cols-2">
-        <SettingCard icon={Shield} title="Visa preference" value={profile.visaSponsorshipNeeded ? "Sponsorship-aware scoring on" : "Standard scoring"} />
-        <SettingCard icon={Bell} title="Alerts" value="Mock instant alerts enabled" />
+        <SettingCard icon={Shield} title="Visa preference" value={profile.visaSponsorshipNeeded ? "Sponsorship-aware matching on" : "Standard matching"} />
+        <SettingCard icon={Bell} title="Alerts" value="Application reminders ready for the next release" />
         <SettingCard icon={Database} title="Data layer" value={`${Object.keys(savedJobs).length} saved jobs synced with Supabase`} />
         <SettingCard icon={UserRound} title="Account" value={email} />
       </Stagger>
@@ -47,8 +47,8 @@ export default function SettingsPage() {
         <div className="mt-4 grid gap-3 md:grid-cols-3">
           {[
             "Supabase: auth, profiles, saved jobs, match scores, and job tables are connected.",
-            "AI: resume extraction and job compatibility run through server-side API routes.",
-            "Radar: deterministic dashboard scoring stays fast while job detail analysis goes deeper."
+            "AI: resume extraction, compatibility briefs, resume tailoring, and cover letters run through server-side routes.",
+            "Radar: role-first matching stays fast while job detail analysis goes deeper."
           ].map((note) => (
             <p key={note} className="rounded-3xl border border-black/[0.05] bg-[#fbfbfd] p-4 text-sm leading-6 text-[#687180]">{note}</p>
           ))}

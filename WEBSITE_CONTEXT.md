@@ -472,7 +472,7 @@ GEMINI_API_KEY=your_gemini_api_key_here
 GEMINI_MODEL=gemini-3.5-flash
 GEMINI_PROFILE_MODEL=gemini-3.5-flash
 GEMINI_MATCH_MODEL=gemini-3.5-flash
-GEMINI_FALLBACK_MODELS=gemini-2.5-flash
+GEMINI_FALLBACK_MODELS=gemini-3-flash-preview,gemini-3.1-flash-lite,gemini-2.5-flash,gemini-2.5-flash-lite
 NEXT_PUBLIC_APP_URL=http://localhost:3000
 ```
 

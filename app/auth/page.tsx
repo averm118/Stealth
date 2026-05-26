@@ -90,7 +90,7 @@ function AuthForm() {
             Your radar, saved securely.
           </h1>
           <p className="mt-5 max-w-md text-sm leading-6 text-[#687180]">
-            Sign in to save your resume profile, tracker statuses, and AI match history across devices.
+            Sign in to keep your resume profile, tracker statuses, and job-detail insights synced across devices.
           </p>
         </div>
 

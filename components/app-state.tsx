@@ -147,6 +147,7 @@ function normalizeProfile(profile: Partial<CandidateProfile>): CandidateProfile 
   return {
     ...defaultCandidateProfile,
     ...profile,
+    resumeDocument: profile.resumeDocument ?? null,
     personality: {
       ...defaultCandidateProfile.personality,
       ...profile.personality

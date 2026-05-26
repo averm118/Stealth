@@ -39,14 +39,14 @@ export function AuthStatus() {
   }
 
   if (loading) {
-    return <div className="hidden h-10 w-28 rounded-full bg-white/70 shadow-sm sm:block" />;
+    return <div className="h-10 w-24 rounded-full bg-white/70 shadow-sm sm:w-28" />;
   }
 
   if (!user) {
     return (
       <Link
         href="/auth"
-        className="hidden items-center gap-2 rounded-full bg-[#171b24] px-5 py-3 text-sm font-semibold text-white shadow-[0_18px_40px_rgba(20,25,34,0.16)] transition hover:-translate-y-0.5 hover:bg-[#262c37] sm:flex"
+        className="flex items-center gap-2 rounded-full bg-[#171b24] px-4 py-2.5 text-sm font-semibold text-white shadow-[0_18px_40px_rgba(20,25,34,0.16)] transition hover:-translate-y-0.5 hover:bg-[#262c37] sm:px-5 sm:py-3"
       >
         <UserRound size={16} />
         Sign in
@@ -58,7 +58,7 @@ export function AuthStatus() {
     <button
       type="button"
       onClick={() => void signOut()}
-      className="hidden items-center gap-2 rounded-full bg-[#171b24] px-5 py-3 text-sm font-semibold text-white shadow-[0_18px_40px_rgba(20,25,34,0.16)] transition hover:-translate-y-0.5 hover:bg-[#262c37] sm:flex"
+      className="flex items-center gap-2 rounded-full bg-[#171b24] px-4 py-2.5 text-sm font-semibold text-white shadow-[0_18px_40px_rgba(20,25,34,0.16)] transition hover:-translate-y-0.5 hover:bg-[#262c37] sm:px-5 sm:py-3"
       title={user.email ?? "Signed in"}
     >
       <LogOut size={16} />

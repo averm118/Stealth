@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import mammoth from "mammoth";
+import { createHash } from "node:crypto";
 import { buildStructuredResumePromptText, structureResumeText } from "@/lib/resume-structure";
+import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 
@@ -27,11 +29,20 @@ export async function POST(request: Request) {
     }
 
     const structuredResume = structureResumeText(text);
+    const textHash = createHash("sha256").update(text).digest("hex");
+    const resumeDocument = await storeOriginalResumeDocument(file, buffer, textHash);
+    const documentWarning =
+      isDocx(file) && !resumeDocument
+        ? "DOCX layout preservation is available in this browser for this upload. Supabase Storage did not store a server copy."
+        : undefined;
 
     return NextResponse.json({
       fileName: file.name,
       fileType: file.type,
       sectionNames: structuredResume.sectionNames,
+      resumeDocument,
+      textHash,
+      documentWarning,
       text: buildStructuredResumePromptText({
         fileName: file.name,
         fileType: file.type,
@@ -42,6 +53,42 @@ export async function POST(request: Request) {
     const message = getSafeParseError(error);
     return NextResponse.json({ error: message }, { status: 500 });
   }
+}
+
+async function storeOriginalResumeDocument(file: File, buffer: Buffer, textHash: string) {
+  const supabase = await createServerSupabaseClient();
+  if (!supabase) return null;
+
+  const {
+    data: { user }
+  } = await supabase.auth.getUser();
+
+  if (!user) return null;
+
+  const safeName = file.name
+    .replace(/[^a-zA-Z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 120);
+  const storagePath = `${user.id}/${Date.now()}-${safeName || "resume"}`;
+  const { error } = await supabase.storage.from("resumes").upload(storagePath, buffer, {
+    contentType: file.type || getFallbackMimeType(file.name),
+    upsert: true
+  });
+
+  if (error) {
+    console.warn("Could not store original resume document.", error);
+    return null;
+  }
+
+  return {
+    storagePath,
+    fileName: file.name,
+    fileType: file.type || getFallbackMimeType(file.name),
+    fileSize: file.size,
+    uploadedAt: new Date().toISOString(),
+    textHash,
+    exactLayoutSupported: isDocx(file)
+  };
 }
 
 async function extractTextFromResume(file: File, buffer: Buffer) {
@@ -64,6 +111,19 @@ async function extractTextFromResume(file: File, buffer: Buffer) {
   }
 
   throw new Error("Supported resume formats: PDF, DOCX, TXT, or MD.");
+}
+
+function isDocx(file: File) {
+  const name = file.name.toLowerCase();
+  return name.endsWith(".docx") || file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+}
+
+function getFallbackMimeType(name: string) {
+  const lower = name.toLowerCase();
+  if (lower.endsWith(".pdf")) return "application/pdf";
+  if (lower.endsWith(".docx")) return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+  if (lower.endsWith(".md")) return "text/markdown";
+  return "text/plain";
 }
 
 async function extractTextFromPdf(buffer: Buffer) {

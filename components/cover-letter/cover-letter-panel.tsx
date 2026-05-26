@@ -107,34 +107,7 @@ export function CoverLetterPanel({ job, profile, open, onOpenChange }: Readonly<
 
     const { jsPDF } = await import("jspdf");
     const doc = new jsPDF({ unit: "pt", format: "letter" });
-    const margin = 62;
-    const pageWidth = doc.internal.pageSize.getWidth();
-    const pageHeight = doc.internal.pageSize.getHeight();
-    const maxWidth = pageWidth - margin * 2;
-    let y = margin;
-
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(11);
-
-    for (const paragraph of result.coverLetterText.split(/\n+/)) {
-      const lines = doc.splitTextToSize(paragraph.trim(), maxWidth);
-      if (!lines.length) {
-        y += 12;
-        continue;
-      }
-
-      if (y + lines.length * 16 > pageHeight - margin) {
-        doc.addPage();
-        y = margin;
-      }
-
-      for (const line of lines) {
-        doc.text(line, margin, y);
-        y += 16;
-      }
-
-      y += 10;
-    }
+    renderOnePageCoverLetterPdf(doc, result.coverLetterText);
 
     doc.save(`stealth-cover-letter-${slugify(job.company)}-${slugify(job.title)}.pdf`);
   }
@@ -324,4 +297,78 @@ function slugify(value: string) {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 70);
+}
+
+type JsPdfInstance = InstanceType<typeof import("jspdf").jsPDF>;
+
+type CoverLetterLayout = {
+  margin: number;
+  fontSize: number;
+  lineHeight: number;
+  paragraphGap: number;
+};
+
+function renderOnePageCoverLetterPdf(doc: JsPdfInstance, text: string) {
+  const paragraphs = text
+    .replace(/\r/g, "\n")
+    .split(/\n+/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean);
+  const layout = chooseCoverLetterLayout(doc, paragraphs);
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const maxWidth = pageWidth - layout.margin * 2;
+  let y = layout.margin;
+
+  doc.setTextColor(18, 22, 32);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(layout.fontSize);
+
+  for (const paragraph of paragraphs) {
+    const lines = doc.splitTextToSize(paragraph, maxWidth);
+    const requiredHeight = lines.length * layout.lineHeight + layout.paragraphGap;
+    if (y + requiredHeight > pageHeight - layout.margin) break;
+
+    for (const line of lines) {
+      doc.text(line, layout.margin, y);
+      y += layout.lineHeight;
+    }
+
+    y += layout.paragraphGap;
+  }
+}
+
+function chooseCoverLetterLayout(doc: JsPdfInstance, paragraphs: string[]): CoverLetterLayout {
+  const layouts: CoverLetterLayout[] = [
+    { margin: 62, fontSize: 11, lineHeight: 15.5, paragraphGap: 8 },
+    { margin: 56, fontSize: 10.4, lineHeight: 14.3, paragraphGap: 6 },
+    { margin: 50, fontSize: 9.8, lineHeight: 13.2, paragraphGap: 5 },
+    { margin: 44, fontSize: 9.2, lineHeight: 12.2, paragraphGap: 4 },
+    { margin: 40, fontSize: 8.6, lineHeight: 11.4, paragraphGap: 3 }
+  ];
+
+  return layouts.find((layout) => estimateCoverLetterPages(doc, paragraphs, layout) <= 1) ?? layouts[layouts.length - 1];
+}
+
+function estimateCoverLetterPages(doc: JsPdfInstance, paragraphs: string[], layout: CoverLetterLayout) {
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const maxWidth = pageWidth - layout.margin * 2;
+  let y = layout.margin;
+  let pages = 1;
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(layout.fontSize);
+
+  for (const paragraph of paragraphs) {
+    const lines = doc.splitTextToSize(paragraph, maxWidth);
+    const requiredHeight = lines.length * layout.lineHeight + layout.paragraphGap;
+    if (y + requiredHeight > pageHeight - layout.margin) {
+      pages += 1;
+      y = layout.margin;
+    }
+    y += requiredHeight;
+  }
+
+  return pages;
 }

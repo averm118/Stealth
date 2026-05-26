@@ -7,7 +7,12 @@ import { createPortal } from "react-dom";
 import { ResumeSuggestionCard } from "@/components/resume-tailor/resume-suggestion-card";
 import { Button } from "@/components/ui/button";
 import { TAILOR_RESUME_VERSION } from "@/lib/ai-versions";
-import type { CandidateProfile, Job, ResumeBulletRewrite, TailoredResumeResult } from "@/lib/types";
+import {
+  createTailoredDocxFromLocalDocument,
+  getBestResumeDocument,
+  type LocalResumeDocumentMetadata
+} from "@/lib/resume-local-document";
+import type { CandidateProfile, Job, ResumeBulletRewrite, ResumeDocumentMetadata, TailoredResumeResult } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 type TailorResumePanelProps = {
@@ -25,6 +30,9 @@ export function TailorResumePanel({ job, profile, open, onOpenChange }: Readonly
   const [error, setError] = useState("");
   const [hasGenerated, setHasGenerated] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [resumeDocument, setResumeDocument] = useState<ResumeDocumentMetadata | LocalResumeDocumentMetadata | null>(
+    profile.resumeDocument ?? null
+  );
 
   const cacheKey = useMemo(
     () => `stealth.tailoredResume.${TAILOR_RESUME_VERSION}.${job.id}.${hashTailorProfile(profile)}`,
@@ -38,6 +46,11 @@ export function TailorResumePanel({ job, profile, open, onOpenChange }: Readonly
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  useEffect(() => {
+    if (!mounted) return;
+    setResumeDocument(getBestResumeDocument(profile));
+  }, [mounted, profile]);
 
   useEffect(() => {
     if (!open) return;
@@ -108,6 +121,13 @@ export function TailorResumePanel({ job, profile, open, onOpenChange }: Readonly
         score: 0,
         missingKeywords: [],
         suggestedSkills: [],
+        editOperations: [],
+        appliedChanges: [],
+        skippedChanges: [],
+        layoutAdjustment: {
+          fontScale: 1,
+          reason: "No layout adjustment applied."
+        },
         bulletRewrites: [],
         atsNotes: ["AI tailoring failed. Showing your original resume."],
         tailoredResumeText: profile.resumeText || "",
@@ -126,50 +146,68 @@ export function TailorResumePanel({ job, profile, open, onOpenChange }: Readonly
 
     const { jsPDF } = await import("jspdf");
     const doc = new jsPDF({ unit: "pt", format: "letter" });
-    const margin = 54;
-    const pageWidth = doc.internal.pageSize.getWidth();
-    const pageHeight = doc.internal.pageSize.getHeight();
-    const maxWidth = pageWidth - margin * 2;
-    let y = margin;
-
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(10.5);
-
-    const resumeLines = result.tailoredResumeText.split(/\n/);
-
-    for (const [lineIndex, paragraph] of resumeLines.entries()) {
-      const line = paragraph.trim();
-      const lines = line ? doc.splitTextToSize(line, maxWidth) : [""];
-      const shouldHighlight = changedLineIndexes.has(lineIndex) && Boolean(line);
-
-      if (shouldHighlight && y + lines.length * 15 + 8 > pageHeight - margin) {
-        doc.addPage();
-        y = margin;
-      }
-
-      if (shouldHighlight) {
-        doc.setFillColor(241, 243, 255);
-        doc.roundedRect(margin - 8, y - 11, maxWidth + 16, lines.length * 15 + 7, 5, 5, "F");
-      }
-
-      for (const item of lines) {
-        if (y > pageHeight - margin) {
-          doc.addPage();
-          y = margin;
-        }
-
-        doc.text(item, margin, y);
-        y += 15;
-      }
-
-      y += line ? 5 : 8;
-    }
+    renderApplyReadyResumePdf({
+      doc,
+      tailoredText: result.tailoredResumeText
+    });
 
     doc.save(`stealth-tailored-resume-${slugify(job.company)}-${slugify(job.title)}.pdf`);
   }
 
+  function downloadTextResume() {
+    if (!result?.tailoredResumeText) return;
+
+    const { extension, mimeType } = getTextExportDetails(profile);
+    const blob = new Blob([result.tailoredResumeText], { type: mimeType });
+    downloadBlob(blob, `stealth-tailored-resume-${slugify(job.company)}-${slugify(job.title)}.${extension}`);
+  }
+
+  async function downloadDocx() {
+    if (!result?.tailoredResumeText || !resumeDocument?.exactLayoutSupported) return;
+
+    if (isLocalResumeDocument(resumeDocument)) {
+      try {
+        const buffer = await createTailoredDocxFromLocalDocument({
+          editOperations: result.editOperations,
+          rewrites: result.bulletRewrites,
+          layoutAdjustment: result.layoutAdjustment
+        });
+        const blob = new Blob([buffer], {
+          type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        });
+        downloadBlob(blob, `stealth-tailored-resume-${slugify(job.company)}-${slugify(job.title)}.docx`);
+      } catch {
+        setError("Could not create the layout-preserved DOCX from local storage. Please re-upload your DOCX resume.");
+      }
+      return;
+    }
+
+    const response = await fetch("/api/resume/tailor/docx", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        profile,
+        rewrites: result.bulletRewrites,
+        editOperations: result.editOperations,
+        layoutAdjustment: result.layoutAdjustment
+      })
+    });
+
+    if (!response.ok) {
+      setError("Could not create the layout-preserved DOCX. Please try again.");
+      return;
+    }
+
+    const blob = await response.blob();
+    downloadBlob(blob, `stealth-tailored-resume-${slugify(job.company)}-${slugify(job.title)}.docx`);
+  }
+
   const isLoading = Boolean(loadingMode);
   const isOriginalFallback = result?.source === "original_resume";
+  const exportMode = getResumeExportMode(profile, resumeDocument);
+  const hasLayoutPreservingDocx = exportMode === "docx";
+  const isPdfTemplateExport = exportMode === "pdf" || exportMode === "unknown";
+  const isTextExport = exportMode === "text" || exportMode === "markdown";
 
   if (!mounted) return null;
 
@@ -202,6 +240,9 @@ export function TailorResumePanel({ job, profile, open, onOpenChange }: Readonly
                   </p>
                   <h2 className="mt-3 line-clamp-2 text-2xl font-semibold tracking-[-0.045em] text-[#171b24]">{job.title}</h2>
                   <p className="mt-1 text-sm text-[#687180]">{job.company}</p>
+                  <p className="mt-3 inline-flex rounded-full border border-black/[0.06] bg-white/70 px-3 py-1 text-xs font-medium text-[#687180]">
+                    {getExportBadgeLabel(exportMode)}
+                  </p>
                 </div>
                 <button
                   type="button"
@@ -225,6 +266,8 @@ export function TailorResumePanel({ job, profile, open, onOpenChange }: Readonly
                       {result.atsNotes[0] || "AI tailoring failed. Showing your original resume."}
                     </p>
                   )}
+                  <ExportModeNotice mode={exportMode} />
+                  {hasGenerated && result && <TailoringChangeSummary result={result} />}
 
                   <div className="grid gap-3 sm:grid-cols-[0.72fr_1.28fr]">
                     <ResumeSuggestionCard title="Score">
@@ -270,15 +313,35 @@ export function TailorResumePanel({ job, profile, open, onOpenChange }: Readonly
 
             <div className="shrink-0 border-t border-black/[0.06] bg-white/65 px-6 py-4">
               <div className="flex flex-col gap-3 sm:flex-row">
-                <Button className="sm:flex-1" onClick={() => void requestTailoring("generate")} disabled={isLoading}>
+                <Button variant={hasGenerated ? "outline" : "default"} className="sm:flex-1" onClick={() => void requestTailoring("generate")} disabled={isLoading}>
                   {loadingMode === "generate" ? <Loader2 className="animate-spin" size={16} /> : <FileText size={16} />}
-                  Generate tailored resume
+                  {hasGenerated ? "Regenerate" : "Generate tailored resume"}
                 </Button>
                 {hasGenerated && (
-                  <Button variant="outline" className="sm:flex-1" onClick={() => void downloadPdf()} disabled={!result?.tailoredResumeText}>
-                    <Download size={16} />
-                    {isOriginalFallback ? "Download original PDF" : "Download PDF"}
-                  </Button>
+                  <>
+                    {hasLayoutPreservingDocx && (
+                      <Button
+                        className="sm:flex-1"
+                        onClick={() => void downloadDocx()}
+                        disabled={!result?.tailoredResumeText}
+                      >
+                        <Download size={16} />
+                        Download tailored DOCX
+                      </Button>
+                    )}
+                    {isPdfTemplateExport && (
+                      <Button variant="outline" className="sm:flex-1" onClick={() => void downloadPdf()} disabled={!result?.tailoredResumeText}>
+                        <Download size={16} />
+                        Download template PDF
+                      </Button>
+                    )}
+                    {isTextExport && (
+                      <Button variant="outline" className="sm:flex-1" onClick={downloadTextResume} disabled={!result?.tailoredResumeText}>
+                        <Download size={16} />
+                        {exportMode === "markdown" ? "Download tailored MD" : "Download tailored TXT"}
+                      </Button>
+                    )}
+                  </>
                 )}
               </div>
             </div>
@@ -287,6 +350,16 @@ export function TailorResumePanel({ job, profile, open, onOpenChange }: Readonly
       )}
     </AnimatePresence>,
     document.body
+  );
+}
+
+function ExportModeNotice({ mode }: Readonly<{ mode: ResumeExportMode }>) {
+  const copy = getExportModeCopy(mode);
+
+  return (
+    <div className="rounded-[22px] border border-black/[0.06] bg-white/65 px-4 py-3 text-sm leading-6 text-[#687180] shadow-sm">
+      <span className="font-medium text-[#171b24]">{copy.title}</span> {copy.body}
+    </div>
   );
 }
 
@@ -305,6 +378,30 @@ function PanelLoadingState() {
         <span className="block h-3 w-3/4 animate-pulse rounded-full bg-black/[0.06]" />
         <span className="block h-3 w-5/6 animate-pulse rounded-full bg-black/[0.06]" />
       </div>
+    </div>
+  );
+}
+
+function TailoringChangeSummary({ result }: Readonly<{ result: TailoredResumeResult }>) {
+  const appliedCount = result.appliedChanges?.length ?? 0;
+  const skippedCount = result.skippedChanges?.filter((change) => change.skipReason !== "Preview only. Generate to apply this change.").length ?? 0;
+  const fontScale = result.layoutAdjustment?.fontScale ?? 1;
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700">
+        Applied {appliedCount} {appliedCount === 1 ? "change" : "changes"}
+      </span>
+      {fontScale < 0.995 && (
+        <span className="rounded-full border border-[#cfd5ff] bg-[#f1f3ff] px-3 py-1.5 text-xs font-medium text-[#5661d8]">
+          Font adjusted for one-page fit
+        </span>
+      )}
+      {skippedCount > 0 && (
+        <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-700">
+          {skippedCount} unmapped {skippedCount === 1 ? "edit" : "edits"}
+        </span>
+      )}
     </div>
   );
 }
@@ -358,7 +455,7 @@ function ResumeDraftPreview({
       {hasHighlights && (
         <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-[#cfd5ff] bg-[#f1f3ff] px-3 py-1.5 text-xs font-medium text-[#5661d8]">
           <span className="h-2 w-2 rounded-full bg-[#626eea]" />
-          Highlighted lines were changed or added
+          Highlighted lines changed here; downloads stay clean
         </div>
       )}
       <div className="max-h-[420px] overflow-y-auto rounded-[18px] border border-black/[0.06] bg-white/75 p-3 font-mono text-[11px] leading-5 text-[#4d5665] shadow-sm">
@@ -415,12 +512,95 @@ function slugify(value: string) {
     .slice(0, 70);
 }
 
+type ResumeExportMode = "docx" | "pdf" | "markdown" | "text" | "unknown";
+
+function getResumeExportMode(profile: CandidateProfile, resumeDocument?: ResumeDocumentMetadata | null): ResumeExportMode {
+  const document = resumeDocument ?? profile.resumeDocument;
+  const fileName = document?.fileName?.toLowerCase() ?? "";
+  const fileType = document?.fileType?.toLowerCase() ?? "";
+
+  if (document?.exactLayoutSupported || fileName.endsWith(".docx")) return "docx";
+  if (fileType.includes("pdf") || fileName.endsWith(".pdf")) return "pdf";
+  if (fileType.includes("markdown") || fileName.endsWith(".md")) return "markdown";
+  if (fileType.startsWith("text/") || fileName.endsWith(".txt")) return "text";
+
+  return "unknown";
+}
+
+function getExportBadgeLabel(mode: ResumeExportMode) {
+  switch (mode) {
+    case "docx":
+      return "Layout preserved: DOCX";
+    case "pdf":
+      return "Template export: PDF";
+    case "markdown":
+      return "Text export: MD";
+    case "text":
+      return "Text export: TXT";
+    default:
+      return "Template export";
+  }
+}
+
+function getExportModeCopy(mode: ResumeExportMode) {
+  switch (mode) {
+    case "docx":
+      return {
+        title: "Exact layout preserved.",
+        body: "Your tailored download keeps the uploaded Word layout. For an exact PDF, open the tailored DOCX in Word or Google Docs and export as PDF."
+      };
+    case "pdf":
+      return {
+        title: "Template PDF export.",
+        body: "Your uploaded PDF is used for resume text and matching. Exact layout preservation requires uploading a DOCX version."
+      };
+    case "markdown":
+      return {
+        title: "Markdown export.",
+        body: "Your tailored resume downloads as Markdown so it stays in the same uploaded format."
+      };
+    case "text":
+      return {
+        title: "Text export.",
+        body: "Your tailored resume downloads as plain text so it stays in the same uploaded format."
+      };
+    default:
+      return {
+        title: "Template export.",
+        body: "Upload a DOCX resume when you want exact Word layout preservation."
+      };
+  }
+}
+
+function getTextExportDetails(profile: CandidateProfile) {
+  const mode = getResumeExportMode(profile, getBestResumeDocument(profile));
+  if (mode === "markdown") return { extension: "md", mimeType: "text/markdown;charset=utf-8" };
+  return { extension: "txt", mimeType: "text/plain;charset=utf-8" };
+}
+
+function isLocalResumeDocument(document: ResumeDocumentMetadata | LocalResumeDocumentMetadata): document is LocalResumeDocumentMetadata {
+  return "localKey" in document || document.storagePath.startsWith("indexeddb://");
+}
+
+function downloadBlob(blob: Blob, fileName: string) {
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.URL.revokeObjectURL(url);
+}
+
 function getChangedLineIndexes(originalResume: string, tailoredResume: string, rewrites: ResumeBulletRewrite[]) {
   const changed = new Set<number>();
-  if (!tailoredResume.trim() || normalizeResumeForDiff(originalResume) === normalizeResumeForDiff(tailoredResume)) return changed;
+  const comparableOriginal = getRenderableResumeText(originalResume);
+  const comparableTailored = getRenderableResumeText(tailoredResume);
+  if (!comparableTailored.trim() || normalizeResumeForDiff(comparableOriginal) === normalizeResumeForDiff(comparableTailored)) return changed;
 
   const originalLines = new Set(
-    originalResume
+    comparableOriginal
       .split(/\n/)
       .map(normalizeLineForDiff)
       .filter(Boolean)
@@ -430,7 +610,7 @@ function getChangedLineIndexes(originalResume: string, tailoredResume: string, r
     .map(normalizeLineForDiff)
     .filter((item) => item.length > 12);
 
-  tailoredResume.split(/\n/).forEach((line, index) => {
+  comparableTailored.split(/\n/).forEach((line, index) => {
     const normalized = normalizeLineForDiff(line);
     if (!normalized) return;
 
@@ -454,4 +634,266 @@ function normalizeLineForDiff(value: string) {
     .replace(/[^\w+#]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+type JsPdfInstance = InstanceType<typeof import("jspdf").jsPDF>;
+
+type ResumePdfLine = {
+  text: string;
+  kind: "header" | "section" | "body" | "blank";
+};
+
+type ResumePdfLayout = {
+  marginX: number;
+  marginTop: number;
+  marginBottom: number;
+  fontSize: number;
+  headerFontSize: number;
+  sectionFontSize: number;
+  lineHeight: number;
+  sectionGap: number;
+  paragraphGap: number;
+};
+
+function renderApplyReadyResumePdf({
+  doc,
+  tailoredText
+}: {
+  doc: JsPdfInstance;
+  tailoredText: string;
+}) {
+  const lines = parseResumePdfLines(tailoredText);
+  const layout = chooseResumePdfLayout(doc, lines);
+
+  drawResumeLines(doc, lines, layout);
+}
+
+function parseResumePdfLines(text: string): ResumePdfLine[] {
+  const rawLines = getRenderableResumeText(text)
+    .split(/\n/)
+    .map((line) => line.replace(/\s+$/g, ""));
+
+  const firstSectionIndex = rawLines.findIndex((line) => isResumeSectionHeading(line));
+
+  return rawLines.map((line, index) => {
+    const trimmed = line.trim();
+    if (!trimmed) return { text: "", kind: "blank" };
+    if (isResumeSectionHeading(trimmed)) return { text: normalizeDisplaySectionHeading(trimmed), kind: "section" };
+    if (firstSectionIndex === -1 || index < firstSectionIndex) return { text: trimmed, kind: "header" };
+    return { text: normalizeResumeBullet(trimmed), kind: "body" };
+  });
+}
+
+function getRenderableResumeText(text: string) {
+  return text
+    .replace(/\r/g, "\n")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => {
+      if (!line) return true;
+      if (/^STRUCTURED_RESUME_UPLOAD:/i.test(line)) return false;
+      if (/^SOURCE_TYPE:/i.test(line)) return false;
+      if (/^DETECTED_SECTIONS:/i.test(line)) return false;
+      if (/^--- PAGE \d+ OF \d+ ---$/i.test(line)) return false;
+      return true;
+    })
+    .map((line) => {
+      const sectionMatch = line.match(/^SECTION:\s*(.+)$/i);
+      if (!sectionMatch) return line;
+      const section = sectionMatch[1]?.trim() ?? "";
+      return /^resume header$/i.test(section) ? "" : section.toUpperCase();
+    })
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function chooseResumePdfLayout(doc: JsPdfInstance, lines: ResumePdfLine[]): ResumePdfLayout {
+  const layouts: ResumePdfLayout[] = [
+    { marginX: 46, marginTop: 46, marginBottom: 42, fontSize: 9.6, headerFontSize: 11, sectionFontSize: 10.5, lineHeight: 12.4, sectionGap: 7, paragraphGap: 3 },
+    { marginX: 42, marginTop: 42, marginBottom: 38, fontSize: 9.1, headerFontSize: 10.4, sectionFontSize: 10, lineHeight: 11.7, sectionGap: 6, paragraphGap: 2 },
+    { marginX: 38, marginTop: 38, marginBottom: 34, fontSize: 8.6, headerFontSize: 9.8, sectionFontSize: 9.4, lineHeight: 11, sectionGap: 5, paragraphGap: 1.5 },
+    { marginX: 34, marginTop: 34, marginBottom: 32, fontSize: 8.1, headerFontSize: 9.3, sectionFontSize: 9, lineHeight: 10.4, sectionGap: 4, paragraphGap: 1 },
+    { marginX: 30, marginTop: 30, marginBottom: 28, fontSize: 7.4, headerFontSize: 8.7, sectionFontSize: 8.3, lineHeight: 9.4, sectionGap: 3, paragraphGap: 0.5 },
+    { marginX: 28, marginTop: 28, marginBottom: 26, fontSize: 6.8, headerFontSize: 8, sectionFontSize: 7.7, lineHeight: 8.6, sectionGap: 2, paragraphGap: 0 }
+  ];
+
+  return (
+    layouts.find((layout) => estimateResumePageCount(doc, lines, layout) <= 1) ??
+    layouts[layouts.length - 1]
+  );
+}
+
+function drawResumeLines(doc: JsPdfInstance, lines: ResumePdfLine[], layout: ResumePdfLayout) {
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const maxWidth = pageWidth - layout.marginX * 2;
+  let y = layout.marginTop;
+  let headerLineCount = 0;
+
+  doc.setTextColor(18, 22, 32);
+
+  for (const line of lines) {
+    if (line.kind === "blank") {
+      y += layout.paragraphGap + 2;
+      continue;
+    }
+
+    const style = getPdfLineStyle(line, headerLineCount);
+    const fontSize = resolvePdfFontSize(line, headerLineCount, layout);
+    const lineHeight = resolvePdfLineHeight(line, headerLineCount, layout);
+
+    doc.setFont("helvetica", style.fontStyle);
+    doc.setFontSize(fontSize);
+
+    const wrapped = doc.splitTextToSize(line.text, maxWidth - style.indent);
+    const requiredHeight = wrapped.length * lineHeight + style.before + style.after;
+
+    if (y + requiredHeight > pageHeight - layout.marginBottom) break;
+
+    y += style.before;
+
+    if (line.kind === "section") {
+      doc.setFillColor(246, 247, 251);
+      doc.roundedRect(layout.marginX - 4, y - fontSize + 1, maxWidth + 8, fontSize + 6, 3, 3, "F");
+    }
+
+    wrapped.forEach((wrappedLine: string) => {
+      const textWidth = doc.getTextWidth(wrappedLine);
+      const x = style.align === "center" ? (pageWidth - textWidth) / 2 : layout.marginX + style.indent;
+      doc.text(wrappedLine, x, y);
+      y += lineHeight;
+    });
+
+    y += style.after;
+    if (line.kind === "header") headerLineCount += 1;
+  }
+}
+
+function getPdfLineStyle(line: ResumePdfLine, headerLineCount: number) {
+  if (line.kind === "section") {
+    return {
+      align: "left" as const,
+      before: 9,
+      after: 5,
+      fontSize: undefined,
+      fontStyle: "bold" as const,
+      indent: 0,
+      lineHeight: undefined
+    };
+  }
+
+  if (line.kind === "header") {
+    return {
+      align: "center" as const,
+      before: headerLineCount === 0 ? 0 : 1.5,
+      after: headerLineCount === 0 ? 2 : 0,
+      fontSize: undefined,
+      fontStyle: headerLineCount === 0 ? ("bold" as const) : ("normal" as const),
+      indent: 0,
+      lineHeight: undefined
+    };
+  }
+
+  const isBullet = /^[•\-*]/.test(line.text);
+  return {
+    align: "left" as const,
+    before: 0.5,
+    after: 1.5,
+    fontSize: undefined,
+    fontStyle: "normal" as const,
+    indent: isBullet ? 10 : 0,
+    lineHeight: undefined
+  };
+}
+
+function resolvePdfFontSize(line: ResumePdfLine, headerLineCount: number, layout: ResumePdfLayout) {
+  if (line.kind === "section") return layout.sectionFontSize;
+  if (line.kind === "header") return headerLineCount === 0 ? layout.headerFontSize : layout.fontSize;
+  return layout.fontSize;
+}
+
+function resolvePdfLineHeight(line: ResumePdfLine, headerLineCount: number, layout: ResumePdfLayout) {
+  if (line.kind === "header" && headerLineCount === 0) return layout.lineHeight + 1;
+  if (line.kind === "section") return layout.lineHeight;
+  return layout.lineHeight;
+}
+
+function estimateResumePageCount(doc: JsPdfInstance, lines: ResumePdfLine[], layout: ResumePdfLayout) {
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const maxWidth = pageWidth - layout.marginX * 2;
+  let y = layout.marginTop;
+  let pages = 1;
+  let headerLineCount = 0;
+
+  for (const line of lines) {
+    if (line.kind === "blank") {
+      y += layout.paragraphGap + 2;
+      continue;
+    }
+
+    const style = getPdfLineStyle(line, headerLineCount);
+    doc.setFont("helvetica", style.fontStyle);
+    doc.setFontSize(resolvePdfFontSize(line, headerLineCount, layout));
+    const wrapped = doc.splitTextToSize(line.text, maxWidth - style.indent);
+    const requiredHeight = wrapped.length * resolvePdfLineHeight(line, headerLineCount, layout) + style.before + style.after;
+
+    if (y + requiredHeight > pageHeight - layout.marginBottom) {
+      pages += 1;
+      y = layout.marginTop;
+    }
+
+    y += requiredHeight;
+    if (line.kind === "header") headerLineCount += 1;
+  }
+
+  return pages;
+}
+
+function getOriginalResumePageCount(text: string) {
+  const explicitPageCounts = [...text.matchAll(/--- PAGE \d+ OF (\d+) ---/gi)]
+    .map((match) => Number(match[1]))
+    .filter((value) => Number.isFinite(value) && value > 0);
+
+  if (explicitPageCounts.length) return Math.max(...explicitPageCounts);
+
+  const renderableLineCount = getRenderableResumeText(text)
+    .split(/\n/)
+    .filter((line) => line.trim()).length;
+
+  return Math.max(1, Math.ceil(renderableLineCount / 52));
+}
+
+function isResumeSectionHeading(line: string) {
+  const cleaned = line.replace(/^SECTION:\s*/i, "").replace(/[:|]+$/g, "").trim();
+  if (!cleaned || cleaned.length > 42) return false;
+
+  const known = [
+    "education",
+    "skills",
+    "experience",
+    "professional experience",
+    "work experience",
+    "projects",
+    "academic projects",
+    "leadership",
+    "certifications",
+    "awards",
+    "honors",
+    "activities",
+    "summary",
+    "objective"
+  ];
+
+  if (known.includes(cleaned.toLowerCase())) return true;
+  return /^[A-Z][A-Z\s/&-]{2,40}$/.test(cleaned) && cleaned.split(/\s+/).length <= 4;
+}
+
+function normalizeDisplaySectionHeading(line: string) {
+  return line.replace(/^SECTION:\s*/i, "").replace(/[:|]+$/g, "").trim().toUpperCase();
+}
+
+function normalizeResumeBullet(line: string) {
+  return line.replace(/^[*]\s+/, "• ");
 }

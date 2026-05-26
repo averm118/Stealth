@@ -98,7 +98,7 @@ export function JobBoard({ jobs, metadata }: Readonly<{ jobs: Job[]; metadata: C
                 Matched openings from your profile.
               </h1>
               <p className="mt-3 max-w-2xl text-sm leading-6 text-[#687180]">
-                Ranked by role direction, degree fit, search type, sponsorship preference, and freshness. Skills are intentionally ignored here.
+                Ranked by role direction, degree fit, search type, sponsorship preference, and freshness, with generic skill noise kept out of the top results.
               </p>
               <div className="mt-5 flex flex-wrap gap-2">
                 <StatusPill label={`Matched to ${activeLaneLabel}`} />
@@ -110,7 +110,7 @@ export function JobBoard({ jobs, metadata }: Readonly<{ jobs: Job[]; metadata: C
               <p className="text-sm font-medium text-[#171b24]">Radar health</p>
               <div className="mt-5 space-y-4">
                 <FocusLine label="Visible matches" value={matches.length} />
-                <FocusLine label="Target per lane" value={`${getMinimumLaneTarget()}+`} />
+                <FocusLine label="Lane target" value={`${getMinimumLaneTarget()}+`} />
                 <FocusLine label="Sponsor-aware" value={sponsorFriendlyCount} />
                 <FocusLine label="Last refresh" value={metadata.lastImportedAt ? formatDate(metadata.lastImportedAt) : "Local fallback"} />
               </div>
@@ -158,10 +158,10 @@ export function JobBoard({ jobs, metadata }: Readonly<{ jobs: Job[]; metadata: C
               <div className="mt-5 space-y-3">
                 <FocusLine label="Profile direction" value={activeLaneLabel} />
                 <FocusLine label="Search type" value={profile.lookingFor} />
-                <FocusLine label="Ranking" value="Deterministic" />
+                <FocusLine label="Ranking" value="Resume aligned" />
               </div>
               <p className="mt-5 text-sm leading-6 text-[#687180]">
-                This view ignores skill overlap and uses role, degree, search type, and sponsorship signals. Open Details for the deeper compatibility score.
+                This view uses role, degree, search type, and sponsorship signals. Open Details for the deeper compatibility brief.
               </p>
             </Card>
           </aside>
@@ -199,7 +199,7 @@ function TopMatchesPanel({
             </p>
             <p className="mt-1 text-sm text-[#7a828f]">
               {belowTarget
-                ? `${matches.length} real ${activeLaneLabel.toLowerCase()} matches found. Keep ingesting to reach 50+.`
+                ? `${matches.length} real ${activeLaneLabel.toLowerCase()} matches found. New sources will keep expanding this lane.`
                 : `${matches.length} role-aligned openings found.`}
             </p>
           </div>

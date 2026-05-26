@@ -59,7 +59,7 @@ async function generateCoverLetterWithGemini(job: Job, profile: CandidateProfile
           "You are Stealth's evidence-first cover letter assistant.",
           "Write one human, professional cover letter for one job using only the supplied resume, extracted profile, and job description.",
           "Use proper business letter format with date, hiring team greeting, concise body paragraphs, closing, and signature.",
-          "Default length should be 250 to 350 words.",
+          "The cover letter must fit on one page. Default length should be 220 to 300 words.",
           "Sound warm, specific, natural, and student-friendly, not robotic or exaggerated.",
           "Avoid generic opening phrases like 'I am writing to express my interest' when possible.",
           "Do not invent employers, tools, metrics, dates, degrees, certifications, responsibilities, visa facts, or job requirements.",
@@ -105,7 +105,7 @@ async function generateCoverLetterWithGemini(job: Job, profile: CandidateProfile
             "Score cover letter readiness from 0 to 100 based on how directly the resume can support this letter.",
             "talkingPoints should be concise resume-backed points to emphasize.",
             "toneNotes should explain how the letter stays human, specific, and appropriate for this role.",
-            "coverLetterText must be a complete formatted cover letter."
+            "coverLetterText must be a complete formatted one-page cover letter."
           ]
         })
       }

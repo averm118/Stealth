@@ -112,6 +112,7 @@ const personalityRules = [
 
 export const defaultCandidateProfile: CandidateProfile = {
   resumeText: "",
+  resumeDocument: null,
   headline: "ASU student exploring analyst and AI internship roles",
   targetRoles: ["Data Analyst", "Business Analyst", "Supply Chain Analyst"],
   skills: ["Excel", "SQL", "Python", "Tableau", "Analytics", "Stakeholder Management"],
@@ -164,6 +165,7 @@ export function extractCandidateProfile(resumeText: string): CandidateProfile {
 
   return {
     resumeText,
+    resumeDocument: null,
     headline: buildHeadline({ education, skills, targetRoles, normalized }),
     targetRoles,
     skills: skills.length > 0 ? skills : defaultCandidateProfile.skills,

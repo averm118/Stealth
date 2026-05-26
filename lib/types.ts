@@ -7,6 +7,16 @@ export type LookingFor = "Full-time job" | "Part-time job" | "Internship";
 export type JobSource = "mock" | "greenhouse" | "lever" | "ashby" | "workday" | "manual" | "company_careers";
 export type JobSourceCategory = "tech" | "ai-software" | "logistics" | "retail" | "manufacturing" | "finance" | "operations";
 
+export type ResumeDocumentMetadata = {
+  storagePath: string;
+  fileName: string;
+  fileType: string;
+  fileSize: number;
+  uploadedAt: string;
+  textHash: string;
+  exactLayoutSupported: boolean;
+};
+
 export type Job = {
   id: string;
   company: string;
@@ -37,6 +47,7 @@ export type IngestedJobRecord = Job & {
 
 export type CandidateProfile = {
   resumeText: string;
+  resumeDocument?: ResumeDocumentMetadata | null;
   headline: string;
   targetRoles: string[];
   skills: string[];
@@ -110,10 +121,38 @@ export type ResumeBulletRewrite = {
   reason: string;
 };
 
+export type ResumeEditOperationType = "replace_line" | "append_to_line" | "shorten_line";
+
+export type ResumeEditOperation = {
+  type: ResumeEditOperationType;
+  targetSection?: string;
+  original: string;
+  replacement: string;
+  keywords?: string[];
+  reason: string;
+};
+
+export type ResumeAppliedChange = ResumeEditOperation & {
+  matchedText?: string;
+};
+
+export type ResumeSkippedChange = Partial<ResumeEditOperation> & {
+  skipReason: string;
+};
+
+export type ResumeLayoutAdjustment = {
+  fontScale: number;
+  reason: string;
+};
+
 export type TailoredResumeResult = {
   score: number;
   missingKeywords: string[];
   suggestedSkills: string[];
+  editOperations: ResumeEditOperation[];
+  appliedChanges: ResumeAppliedChange[];
+  skippedChanges: ResumeSkippedChange[];
+  layoutAdjustment: ResumeLayoutAdjustment;
   bulletRewrites: ResumeBulletRewrite[];
   atsNotes: string[];
   tailoredResumeText: string;

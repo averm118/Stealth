@@ -12,25 +12,25 @@ const productSections = [
   {
     eyebrow: "Resume intelligence",
     title: "Read the resume as a career map.",
-    copy: "Upload a PDF or DOCX and Stealth extracts education, skills, experience focus, work style, and sponsorship signals into a clean candidate profile.",
+    copy: "Upload a PDF or DOCX and Stealth extracts education, target roles, experience focus, sponsorship needs, and search intent into a clean candidate profile.",
     icon: FileText
   },
   {
-    eyebrow: "Opportunity scoring",
-    title: "Every role gets a reason, not just a number.",
-    copy: "Fit scores blend skill overlap, target roles, sponsorship friendliness, competition level, missing skills, and resume keyword suggestions.",
+    eyebrow: "Resume radar",
+    title: "Role-first matching without noisy skill overlap.",
+    copy: "The dashboard prioritizes role direction, degree fit, looking-for preference, sponsorship signals, and freshness so broad tools do not hijack your results.",
     icon: Gauge
   },
   {
-    eyebrow: "Internship tracking",
-    title: "A calmer application pipeline.",
-    copy: "Move roles from saved to applied, interview, rejected, or offer without turning the process into a spreadsheet.",
+    eyebrow: "Application tools",
+    title: "Tailor the next step from one job page.",
+    copy: "Open any role for a deeper compatibility brief, tailored resume draft, and human-sounding cover letter grounded in your uploaded resume.",
     icon: BookmarkCheck
   },
   {
     eyebrow: "Sponsorship insights",
     title: "Visa-aware ranking from the start.",
-    copy: "International student signals shift scoring toward companies that look more sponsorship-friendly for CPT, OPT, and beyond.",
+    copy: "International student signals prioritize roles and companies that look more sponsorship-friendly for CPT, OPT, and beyond.",
     icon: Globe2
   }
 ];
@@ -48,7 +48,7 @@ export default function LandingPage() {
           <Reveal>
             <div className="mx-auto inline-flex items-center gap-2 rounded-full border border-black/[0.06] bg-white/70 px-4 py-2 text-sm text-[#687180] shadow-sm backdrop-blur">
               <Sparkles size={15} className="text-[#5661d8]" />
-              AI internship radar for high-signal students
+              Resume-first internship radar for students
             </div>
           </Reveal>
           <Reveal delay={0.08}>
@@ -58,14 +58,14 @@ export default function LandingPage() {
           </Reveal>
           <Reveal delay={0.16}>
             <p className="mx-auto mt-7 max-w-2xl text-lg leading-8 text-[#687180]">
-              Stealth turns a resume into a quiet command center for internships: ranked jobs, sharper applications, and a pipeline that feels under control.
+              Stealth turns your resume into a quiet command center for internships and new-grad roles: matched openings, sharper materials, and a calmer application flow.
             </p>
           </Reveal>
           <Reveal delay={0.24}>
             <div className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
               <Button asChild size="lg">
                 <Link href="/dashboard">
-                  Open Radar
+                  Open radar
                   <ArrowRight size={18} />
                 </Link>
               </Button>
@@ -79,8 +79,8 @@ export default function LandingPage() {
         <Reveal delay={0.32} className="relative mx-auto mt-16 max-w-6xl">
           <TiltPanel className="relative rounded-[42px] border border-black/[0.06] bg-white/78 p-4 shadow-[0_44px_120px_rgba(20,25,34,0.12)] backdrop-blur-xl">
             <div className="absolute -left-10 top-16 hidden rounded-3xl border border-black/[0.06] bg-white/85 p-4 shadow-[0_24px_70px_rgba(20,25,34,0.12)] lg:block">
-              <p className="text-xs uppercase tracking-[0.18em] text-[#9aa1ad]">Fit lift</p>
-              <p className="mt-2 text-3xl font-semibold text-[#171b24]">+28%</p>
+              <p className="text-xs uppercase tracking-[0.18em] text-[#9aa1ad]">Student-first</p>
+              <p className="mt-2 text-3xl font-semibold text-[#171b24]">50+</p>
             </div>
             <div className="absolute -right-12 bottom-16 hidden rounded-3xl border border-black/[0.06] bg-white/85 p-4 shadow-[0_24px_70px_rgba(20,25,34,0.12)] lg:block">
               <p className="text-xs uppercase tracking-[0.18em] text-[#9aa1ad]">Sponsor signal</p>
@@ -93,9 +93,9 @@ export default function LandingPage() {
 
       <Stagger className="grid gap-4 py-10 md:grid-cols-3">
         {[
-          { label: "Roles indexed", value: jobs.length, suffix: "" },
+          { label: "Seed roles", value: jobs.length, suffix: "+" },
           { label: "Profile signals", value: 12, suffix: "+" },
-          { label: "Score range", value: 100, suffix: "" }
+          { label: "Career tools", value: 3, suffix: "" }
         ].map((metric) => (
           <StaggerItem key={metric.label}>
             <Card className="p-8 text-center">
@@ -147,7 +147,7 @@ export default function LandingPage() {
             <div className="mt-8 flex justify-center">
               <Button asChild variant="secondary" size="lg">
                 <Link href="/profile">
-                  Start with resume
+                  Start with your resume
                   <ArrowRight size={18} />
                 </Link>
               </Button>
@@ -172,7 +172,7 @@ function DashboardMockup() {
             </div>
           </div>
           <div className="mt-8 space-y-3">
-            {["SQL", "Forecasting", "Sponsorship", "Product analytics"].map((label, index) => (
+            {["Target role", "Degree fit", "Sponsorship", "Freshness"].map((label, index) => (
               <motion.div
                 key={label}
                 className="h-2 rounded-full bg-[#eef0f5]"
@@ -189,7 +189,7 @@ function DashboardMockup() {
         </div>
         <div className="rounded-[26px] bg-white p-5 shadow-sm">
           <div className="mb-5 flex items-center justify-between">
-            <p className="text-sm font-semibold text-[#171b24]">Top matches</p>
+            <p className="text-sm font-semibold text-[#171b24]">Resume radar</p>
             <BrainCircuit size={18} className="text-[#5661d8]" />
           </div>
           <div className="space-y-3">
@@ -206,7 +206,9 @@ function DashboardMockup() {
                   <p className="text-sm font-medium text-[#171b24]">{job.title}</p>
                   <p className="mt-1 text-xs text-[#858d9a]">{job.company} / {job.workType}</p>
                 </div>
-                <span className="text-lg font-semibold text-[#5661d8]">{91 - index * 6}</span>
+                <span className="rounded-full bg-[#eef1ff] px-3 py-1 text-xs font-semibold text-[#5661d8]">
+                  Match
+                </span>
               </motion.div>
             ))}
           </div>

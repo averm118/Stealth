@@ -5,7 +5,8 @@ import { useEffect, useState } from "react";
 import { useAppState } from "@/components/app-state";
 import { Card } from "@/components/ui/card";
 import { Reveal } from "@/components/motion-primitives";
-import type { CandidateProfile, LookingFor } from "@/lib/types";
+import { storeLocalResumeDocument } from "@/lib/resume-local-document";
+import type { CandidateProfile, LookingFor, ResumeDocumentMetadata } from "@/lib/types";
 
 const lookingForOptions: LookingFor[] = ["Internship", "Full-time job", "Part-time job"];
 
@@ -69,13 +70,24 @@ export default function ProfilePage() {
       });
       const result = (await response.json()) as {
         text?: string;
+        textHash?: string;
         sectionNames?: string[];
+        resumeDocument?: ResumeDocumentMetadata | null;
+        documentWarning?: string;
         error?: string;
       };
 
       if (!response.ok || !result.text) {
         throw new Error(result.error ?? "Could not parse this resume.");
       }
+
+      let localResumeDocument: ResumeDocumentMetadata | null = null;
+      try {
+        localResumeDocument = result.textHash ? await storeLocalResumeDocument(file, result.textHash) : null;
+      } catch {
+        localResumeDocument = null;
+      }
+      const resumeDocument = result.resumeDocument ?? localResumeDocument ?? null;
 
       const extractionResponse = await fetch("/api/profile/extract", {
         method: "POST",
@@ -99,15 +111,20 @@ export default function ProfilePage() {
 
       updateProfile({
         ...extractionResult.profile,
+        resumeDocument,
         visaSponsorshipNeeded: sponsorshipNeeded,
         lookingFor
       });
+
+      const hasLayoutPreservingDocx = Boolean(resumeDocument?.exactLayoutSupported);
       setUploadState({
         loading: false,
         message:
           extractionResult.source === "local_fallback"
             ? `${file.name} uploaded. Local fallback used because AI extraction was unavailable.`
-            : `${file.name} uploaded and analyzed with AI.`,
+            : hasLayoutPreservingDocx
+              ? `${file.name} uploaded and analyzed with AI. DOCX layout will be preserved for tailored downloads.`
+              : `${file.name} uploaded and analyzed with AI. PDF downloads will use the one-page Stealth template.`,
         error: "",
         fileName: file.name
       });
