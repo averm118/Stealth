@@ -10,9 +10,10 @@ import { TAILOR_RESUME_VERSION } from "@/lib/ai-versions";
 import {
   createTailoredDocxFromLocalDocument,
   getBestResumeDocument,
+  getLocalResumeLayoutMap,
   type LocalResumeDocumentMetadata
 } from "@/lib/resume-local-document";
-import type { CandidateProfile, Job, ResumeBulletRewrite, ResumeDocumentMetadata, TailoredResumeResult } from "@/lib/types";
+import type { CandidateProfile, Job, ResumeBulletRewrite, ResumeDocumentMetadata, ResumeLayoutMap, TailoredResumeResult } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 type TailorResumePanelProps = {
@@ -93,7 +94,7 @@ export function TailorResumePanel({ job, profile, open, onOpenChange }: Readonly
     void requestTailoring("analyze");
   }, [cacheKey, open]);
 
-  async function requestTailoring(mode: TailorMode) {
+  async function requestTailoring(mode: TailorMode, options?: { resumeLayoutMap?: ResumeLayoutMap | null }) {
     setLoadingMode(mode);
     setError("");
 
@@ -104,7 +105,8 @@ export function TailorResumePanel({ job, profile, open, onOpenChange }: Readonly
         body: JSON.stringify({
           jobId: job.id,
           profile,
-          mode
+          mode,
+          resumeLayoutMap: options?.resumeLayoutMap ?? null
         })
       });
       const payload = (await response.json()) as { result?: TailoredResumeResult; error?: string };
@@ -128,6 +130,15 @@ export function TailorResumePanel({ job, profile, open, onOpenChange }: Readonly
           fontScale: 1,
           reason: "No layout adjustment applied."
         },
+        docxEditStats: {
+          appliedEdits: 0,
+          insertedBullets: 0,
+          removedLines: 0,
+          skippedEdits: 0,
+          validationStatus: "not_generated",
+          fontScale: 1,
+          warning: "AI tailoring failed. Showing your original resume."
+        },
         bulletRewrites: [],
         atsNotes: ["AI tailoring failed. Showing your original resume."],
         tailoredResumeText: profile.resumeText || "",
@@ -139,6 +150,21 @@ export function TailorResumePanel({ job, profile, open, onOpenChange }: Readonly
     } finally {
       setLoadingMode(null);
     }
+  }
+
+  async function generateTailoredResume() {
+    let resumeLayoutMap: ResumeLayoutMap | null = null;
+    if (resumeDocument?.exactLayoutSupported && isLocalResumeDocument(resumeDocument)) {
+      try {
+        resumeLayoutMap = await getLocalResumeLayoutMap();
+      } catch (layoutError) {
+        const message = layoutError instanceof Error ? layoutError.message : "Could not read the uploaded DOCX layout.";
+        setError(`Could not read the uploaded DOCX layout. ${message}`);
+        return;
+      }
+    }
+
+    await requestTailoring("generate", { resumeLayoutMap });
   }
 
   async function downloadPdf() {
@@ -176,8 +202,9 @@ export function TailorResumePanel({ job, profile, open, onOpenChange }: Readonly
           type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         });
         downloadBlob(blob, `stealth-tailored-resume-${slugify(job.company)}-${slugify(job.title)}.docx`);
-      } catch {
-        setError("Could not create the layout-preserved DOCX from local storage. Please re-upload your DOCX resume.");
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Please re-upload your DOCX resume.";
+        setError(`Could not create the layout-preserved DOCX. ${message}`);
       }
       return;
     }
@@ -194,7 +221,8 @@ export function TailorResumePanel({ job, profile, open, onOpenChange }: Readonly
     });
 
     if (!response.ok) {
-      setError("Could not create the layout-preserved DOCX. Please try again.");
+      const details = (await response.json().catch(() => null)) as { error?: string } | null;
+      setError(details?.error || "Could not create the layout-preserved DOCX. Please try again.");
       return;
     }
 
@@ -313,7 +341,7 @@ export function TailorResumePanel({ job, profile, open, onOpenChange }: Readonly
 
             <div className="shrink-0 border-t border-black/[0.06] bg-white/65 px-6 py-4">
               <div className="flex flex-col gap-3 sm:flex-row">
-                <Button variant={hasGenerated ? "outline" : "default"} className="sm:flex-1" onClick={() => void requestTailoring("generate")} disabled={isLoading}>
+                <Button variant={hasGenerated ? "outline" : "default"} className="sm:flex-1" onClick={() => void generateTailoredResume()} disabled={isLoading}>
                   {loadingMode === "generate" ? <Loader2 className="animate-spin" size={16} /> : <FileText size={16} />}
                   {hasGenerated ? "Regenerate" : "Generate tailored resume"}
                 </Button>
@@ -383,15 +411,29 @@ function PanelLoadingState() {
 }
 
 function TailoringChangeSummary({ result }: Readonly<{ result: TailoredResumeResult }>) {
-  const appliedCount = result.appliedChanges?.length ?? 0;
+  const stats = result.docxEditStats;
+  const appliedCount = stats ? stats.appliedEdits + stats.insertedBullets + stats.removedLines : result.appliedChanges?.length ?? 0;
+  const insertedCount = stats?.insertedBullets ?? result.appliedChanges?.filter((change) => change.type === "insert_bullet_after").length ?? 0;
+  const removedCount = stats?.removedLines ?? result.appliedChanges?.filter((change) => change.type === "remove_low_priority_paragraph").length ?? 0;
   const skippedCount = result.skippedChanges?.filter((change) => change.skipReason !== "Preview only. Generate to apply this change.").length ?? 0;
   const fontScale = result.layoutAdjustment?.fontScale ?? 1;
 
   return (
-    <div className="flex flex-wrap gap-2">
+    <div className="space-y-2">
+      <div className="flex flex-wrap gap-2">
       <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700">
-        Applied {appliedCount} {appliedCount === 1 ? "change" : "changes"}
+        Applied {appliedCount} {appliedCount === 1 ? "edit" : "edits"}
       </span>
+      {insertedCount > 0 && (
+        <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700">
+          Inserted {insertedCount} {insertedCount === 1 ? "bullet" : "bullets"}
+        </span>
+      )}
+      {removedCount > 0 && (
+        <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600">
+          Removed {removedCount} low-priority {removedCount === 1 ? "line" : "lines"}
+        </span>
+      )}
       {fontScale < 0.995 && (
         <span className="rounded-full border border-[#cfd5ff] bg-[#f1f3ff] px-3 py-1.5 text-xs font-medium text-[#5661d8]">
           Font adjusted for one-page fit
@@ -401,6 +443,12 @@ function TailoringChangeSummary({ result }: Readonly<{ result: TailoredResumeRes
         <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-700">
           {skippedCount} unmapped {skippedCount === 1 ? "edit" : "edits"}
         </span>
+      )}
+      </div>
+      {stats?.warning && (
+        <p className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-800">
+          {stats.warning}
+        </p>
       )}
     </div>
   );

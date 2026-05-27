@@ -1,6 +1,6 @@
 "use client";
 
-import { createTailoredDocxArrayBuffer } from "@/lib/resume-docx";
+import { createResumeLayoutMapFromDocx, createTailoredDocxArrayBuffer } from "@/lib/resume-docx";
 import type { CandidateProfile, ResumeBulletRewrite, ResumeDocumentMetadata, ResumeEditOperation, ResumeLayoutAdjustment } from "@/lib/types";
 
 const dbName = "stealth-resume-documents";
@@ -84,14 +84,22 @@ export async function createTailoredDocxFromLocalDocument(input: {
   rewrites?: ResumeBulletRewrite[];
   layoutAdjustment?: ResumeLayoutAdjustment;
 }) {
+  const record = await getLocalResumeDocumentRecord();
+  return createTailoredDocxArrayBuffer(record.buffer, input);
+}
+
+export async function getLocalResumeLayoutMap() {
+  const record = await getLocalResumeDocumentRecord();
+  return createResumeLayoutMapFromDocx(record.buffer);
+}
+
+async function getLocalResumeDocumentRecord() {
   const localDocument = getLocalResumeDocumentMetadata();
   if (!localDocument) throw new Error("No locally stored DOCX resume was found.");
-
   const db = await openResumeDocumentDb();
   const record = await runStoreRequest<StoredResumeDocument | undefined>(db, "readonly", (store) => store.get(localDocument.localKey));
   if (!record?.buffer) throw new Error("No locally stored DOCX resume was found.");
-
-  return createTailoredDocxArrayBuffer(record.buffer, input);
+  return record;
 }
 
 function openResumeDocumentDb(): Promise<IDBDatabase> {

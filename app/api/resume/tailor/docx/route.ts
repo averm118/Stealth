@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createTailoredDocxFromOriginal } from "@/lib/resume-docx";
+import { createTailoredDocxBuildResultFromOriginal } from "@/lib/resume-docx";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import type { CandidateProfile, ResumeBulletRewrite, ResumeEditOperation, ResumeLayoutAdjustment } from "@/lib/types";
 
@@ -45,16 +45,20 @@ export async function POST(request: Request) {
     }
 
     const originalDocx = Buffer.from(await data.arrayBuffer());
-    const tailoredDocx = await createTailoredDocxFromOriginal(originalDocx, {
+    const tailoredDocx = await createTailoredDocxBuildResultFromOriginal(originalDocx, {
       editOperations: cleanEditOperations(editOperations),
       rewrites: cleanRewrites(rewrites),
       layoutAdjustment: cleanLayoutAdjustment(layoutAdjustment)
     });
 
-    return new NextResponse(new Uint8Array(tailoredDocx), {
+    return new NextResponse(new Uint8Array(tailoredDocx.buffer), {
       headers: {
         "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        "Content-Disposition": `attachment; filename="${getDownloadName(profile.resumeDocument.fileName)}"`
+        "Content-Disposition": `attachment; filename="${getDownloadName(profile.resumeDocument.fileName)}"`,
+        "X-Stealth-DOCX-Applied": String(tailoredDocx.stats.appliedEdits),
+        "X-Stealth-DOCX-Inserted": String(tailoredDocx.stats.insertedBullets),
+        "X-Stealth-DOCX-Removed": String(tailoredDocx.stats.removedLines),
+        "X-Stealth-DOCX-Skipped": String(tailoredDocx.stats.skippedEdits)
       }
     });
   } catch (error) {
@@ -76,18 +80,21 @@ function cleanEditOperations(value: unknown): ResumeEditOperation[] {
       if (!item || typeof item !== "object") return null;
       const record = item as Partial<ResumeEditOperation>;
       if (
-        (record.type !== "replace_line" && record.type !== "append_to_line" && record.type !== "shorten_line") ||
+        !isAllowedOperationType(record.type) ||
         typeof record.original !== "string" ||
-        typeof record.replacement !== "string"
+        (record.type !== "remove_low_priority_paragraph" && typeof record.replacement !== "string")
       ) {
         return null;
       }
 
       return {
         type: record.type,
+        paragraphId: typeof record.paragraphId === "string" ? record.paragraphId : undefined,
+        insertAfterParagraphId: typeof record.insertAfterParagraphId === "string" ? record.insertAfterParagraphId : undefined,
         targetSection: typeof record.targetSection === "string" ? record.targetSection : undefined,
+        sectionName: typeof record.sectionName === "string" ? record.sectionName : undefined,
         original: record.original,
-        replacement: record.replacement,
+        replacement: typeof record.replacement === "string" ? record.replacement : "",
         keywords: Array.isArray(record.keywords) ? record.keywords.filter((item): item is string => typeof item === "string") : [],
         reason: typeof record.reason === "string" ? record.reason : "Tailored for this role."
       };
@@ -95,7 +102,21 @@ function cleanEditOperations(value: unknown): ResumeEditOperation[] {
 
   return cleaned
     .filter((item): item is ResumeEditOperation => Boolean(item))
-    .slice(0, 18);
+    .slice(0, 28);
+}
+
+function isAllowedOperationType(value: unknown): value is ResumeEditOperation["type"] {
+  return (
+    value === "replace_line" ||
+    value === "append_to_line" ||
+    value === "shorten_line" ||
+    value === "replace_paragraph_text" ||
+    value === "append_to_paragraph" ||
+    value === "replace_bullet" ||
+    value === "insert_bullet_after" ||
+    value === "shorten_paragraph" ||
+    value === "remove_low_priority_paragraph"
+  );
 }
 
 function cleanRewrites(value: unknown): ResumeBulletRewrite[] {

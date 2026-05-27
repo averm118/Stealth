@@ -121,11 +121,56 @@ export type ResumeBulletRewrite = {
   reason: string;
 };
 
-export type ResumeEditOperationType = "replace_line" | "append_to_line" | "shorten_line";
+export type ResumeDocxParagraphRole =
+  | "contact_header"
+  | "section_heading"
+  | "divider"
+  | "education_line"
+  | "skills_line"
+  | "role_header"
+  | "bullet"
+  | "activity_line"
+  | "blank"
+  | "body";
+
+export type ResumeLayoutMapParagraph = {
+  id: string;
+  role: ResumeDocxParagraphRole;
+  sectionName?: string;
+  text: string;
+  editableText: string;
+  lockedText?: string;
+  hasLockedDate: boolean;
+  isBullet: boolean;
+  canEdit: boolean;
+  canInsertAfter: boolean;
+  canRemove: boolean;
+};
+
+export type ResumeLayoutMap = {
+  source: "docx";
+  paragraphs: ResumeLayoutMapParagraph[];
+  sectionNames: string[];
+  generatedAt: string;
+};
+
+export type ResumeEditOperationType =
+  | "replace_line"
+  | "append_to_line"
+  | "shorten_line"
+  | "replace_paragraph_text"
+  | "append_to_paragraph"
+  | "replace_bullet"
+  | "insert_bullet_after"
+  | "shorten_paragraph"
+  | "remove_low_priority_paragraph";
 
 export type ResumeEditOperation = {
   type: ResumeEditOperationType;
+  paragraphId?: string;
+  insertAfterParagraphId?: string;
   targetSection?: string;
+  sectionName?: string;
   original: string;
   replacement: string;
   keywords?: string[];
@@ -145,6 +190,16 @@ export type ResumeLayoutAdjustment = {
   reason: string;
 };
 
+export type ResumeDocxEditStats = {
+  appliedEdits: number;
+  insertedBullets: number;
+  removedLines: number;
+  skippedEdits: number;
+  validationStatus: "valid" | "not_generated" | "failed";
+  fontScale: number;
+  warning?: string;
+};
+
 export type TailoredResumeResult = {
   score: number;
   missingKeywords: string[];
@@ -153,6 +208,7 @@ export type TailoredResumeResult = {
   appliedChanges: ResumeAppliedChange[];
   skippedChanges: ResumeSkippedChange[];
   layoutAdjustment: ResumeLayoutAdjustment;
+  docxEditStats?: ResumeDocxEditStats;
   bulletRewrites: ResumeBulletRewrite[];
   atsNotes: string[];
   tailoredResumeText: string;
