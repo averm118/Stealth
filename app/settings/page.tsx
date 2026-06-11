@@ -1,7 +1,6 @@
 "use client";
 
-import { Bell, Database, Shield, UserRound } from "lucide-react";
-import type { ElementType } from "react";
+import { Bell, BookmarkCheck, Shield, UserRound, type LucideIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useAppState } from "@/components/app-state";
 import { Badge } from "@/components/ui/badge";
@@ -37,18 +36,18 @@ export default function SettingsPage() {
       </Reveal>
       <Stagger className="grid gap-5 md:grid-cols-2">
         <SettingCard icon={Shield} title="Visa preference" value={profile.visaSponsorshipNeeded ? "Sponsorship-aware matching on" : "Standard matching"} />
-        <SettingCard icon={Bell} title="Alerts" value="Application reminders ready for the next release" />
-        <SettingCard icon={Database} title="Data layer" value={`${Object.keys(savedJobs).length} saved jobs synced with Supabase`} />
+        <SettingCard icon={Bell} title="Alerts" value="Application reminders are coming soon" />
+        <SettingCard icon={BookmarkCheck} title="Saved roles" value={`${Object.keys(savedJobs).length} jobs in your tracker`} />
         <SettingCard icon={UserRound} title="Account" value={email} />
       </Stagger>
       <Reveal className="lg:col-span-2">
       <Card className="p-7">
-        <h2 className="text-lg font-semibold text-[#171b24]">Integration notes</h2>
+        <h2 className="text-lg font-semibold text-[#171b24]">How Stealth works</h2>
         <div className="mt-4 grid gap-3 md:grid-cols-3">
           {[
-            "Supabase: auth, profiles, saved jobs, match scores, and job tables are connected.",
-            "AI: resume extraction, compatibility briefs, resume tailoring, and cover letters run through server-side routes.",
-            "Radar: role-first matching stays fast while job detail analysis goes deeper."
+            "Your resume profile guides the roles shown in Radar.",
+            "Job pages help you understand fit and prepare stronger applications.",
+            "Saved roles stay organized as you move from saved to offer."
           ].map((note) => (
             <p key={note} className="rounded-3xl border border-black/[0.05] bg-[#fbfbfd] p-4 text-sm leading-6 text-[#687180]">{note}</p>
           ))}
@@ -59,7 +58,7 @@ export default function SettingsPage() {
   );
 }
 
-function SettingCard({ icon: Icon, title, value }: Readonly<{ icon: ElementType; title: string; value: string }>) {
+function SettingCard({ icon: Icon, title, value }: Readonly<{ icon: LucideIcon; title: string; value: string }>) {
   return (
     <StaggerItem>
     <Card className="p-5">

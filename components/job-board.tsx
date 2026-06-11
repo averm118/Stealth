@@ -1,15 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { Bookmark, ChevronDown, ExternalLink, Search, ShieldCheck, Sparkles } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Bookmark, ChevronDown, ExternalLink, Link2, Search, ShieldCheck, Sparkles } from "lucide-react";
 import { motion } from "framer-motion";
 import { useMemo, useState } from "react";
 import { useAppState } from "@/components/app-state";
+import { CompanyLogo } from "@/components/company-logo";
+import { ImportJobUrlPanel } from "@/components/import-job-url/import-job-url-panel";
 import { Reveal, Stagger, StaggerItem } from "@/components/motion-primitives";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { getCompanyInitials, getCompanyLogoUrls } from "@/lib/company-logos";
 import {
   buildRadarMatches,
   buildRadarRoleLanes,
@@ -22,6 +24,7 @@ import {
   type RadarMatch,
   type RadarRoleLane
 } from "@/lib/radar-matching";
+import { getDisplayJobLocation } from "@/lib/job-location";
 import { cn, formatDate } from "@/lib/utils";
 import type { Job, LookingFor } from "@/lib/types";
 
@@ -43,10 +46,12 @@ const viewFilterOptions: Array<{ label: string; value: ViewFilter }> = [
 ];
 
 export function JobBoard({ jobs, metadata }: Readonly<{ jobs: Job[]; metadata: CatalogMetadata }>) {
+  const router = useRouter();
   const { profile, savedJobs, setJobStatus } = useAppState();
   const [query, setQuery] = useState("");
   const [selectedLaneId, setSelectedLaneId] = useState("resume-fit");
   const [viewFilter, setViewFilter] = useState<ViewFilter>("all");
+  const [importPanelOpen, setImportPanelOpen] = useState(false);
 
   const roleDirections = useMemo(() => getRadarRoleDirections(profile), [profile]);
   const activeDirectionLabel = useMemo(() => getRadarDirectionLabel(profile), [profile]);
@@ -93,17 +98,21 @@ export function JobBoard({ jobs, metadata }: Readonly<{ jobs: Job[]; metadata: C
         <Card className="overflow-hidden p-0">
           <div className="grid gap-0 lg:grid-cols-[1fr_360px]">
             <div className="p-7 sm:p-8">
-              <p className="text-sm font-medium text-[#5661d8]">Resume radar</p>
-              <h1 className="mt-3 max-w-3xl text-5xl font-semibold tracking-[-0.055em] text-[#171b24]">
-                Matched openings from your profile.
-              </h1>
-              <p className="mt-3 max-w-2xl text-sm leading-6 text-[#687180]">
-                Ranked by role direction, degree fit, search type, sponsorship preference, and freshness, with generic skill noise kept out of the top results.
-              </p>
-              <div className="mt-5 flex flex-wrap gap-2">
-                <StatusPill label={`Matched to ${activeLaneLabel}`} />
-                <StatusPill label={profile.lookingFor} />
-                <StatusPill label={`${matches.length} aligned openings`} />
+              <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+                <div>
+                  <p className="text-sm font-medium text-[#5661d8]">Resume radar</p>
+                  <h1 className="mt-3 max-w-3xl text-5xl font-semibold tracking-[-0.055em] text-[#171b24]">
+                    Matched openings from your profile.
+                  </h1>
+                  <p className="mt-3 max-w-2xl text-sm leading-6 text-[#687180]">
+                    Ranked by role direction, degree fit, search type, sponsorship preference, and freshness, with generic skill noise kept out of the top results.
+                  </p>
+                  <div className="mt-5 flex flex-wrap gap-2">
+                    <StatusPill label={`Matched to ${activeLaneLabel}`} />
+                    <StatusPill label={profile.lookingFor} />
+                    <StatusPill label={`${matches.length} aligned openings`} />
+                  </div>
+                </div>
               </div>
             </div>
             <div className="border-t border-black/[0.06] bg-white/55 p-7 lg:border-l lg:border-t-0">
@@ -112,7 +121,7 @@ export function JobBoard({ jobs, metadata }: Readonly<{ jobs: Job[]; metadata: C
                 <FocusLine label="Visible matches" value={matches.length} />
                 <FocusLine label="Lane target" value={`${getMinimumLaneTarget()}+`} />
                 <FocusLine label="Sponsor-aware" value={sponsorFriendlyCount} />
-                <FocusLine label="Last refresh" value={metadata.lastImportedAt ? formatDate(metadata.lastImportedAt) : "Local fallback"} />
+                <FocusLine label="Last refresh" value={metadata.lastImportedAt ? formatDate(metadata.lastImportedAt) : "Recently updated"} />
               </div>
             </div>
           </div>
@@ -121,7 +130,7 @@ export function JobBoard({ jobs, metadata }: Readonly<{ jobs: Job[]; metadata: C
 
       <Reveal>
         <Card className="p-3 sm:p-4">
-          <div className="grid gap-3 xl:grid-cols-[1fr_260px_220px] xl:items-center">
+          <div className="grid gap-3 xl:grid-cols-[1fr_280px_230px] xl:items-end">
             <div className="relative">
               <Search className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[#9aa1ad]" size={17} />
               <Input
@@ -164,9 +173,28 @@ export function JobBoard({ jobs, metadata }: Readonly<{ jobs: Job[]; metadata: C
                 This view uses role, degree, search type, and sponsorship signals. Open Details for the deeper compatibility brief.
               </p>
             </Card>
+            <Card className="p-6">
+              <p className="flex items-center gap-2 text-sm font-medium text-[#171b24]">
+                <Link2 size={16} className="text-[#5661d8]" />
+                Can&apos;t find what you&apos;re looking for?
+              </p>
+              <p className="mt-3 text-sm leading-6 text-[#687180]">
+                Import any job into Stealth to get compatibility ratings along with a tailored resume and cover letter.
+              </p>
+              <Button className="mt-5 h-11 w-full justify-center px-5" onClick={() => setImportPanelOpen(true)}>
+                <Link2 size={16} />
+                Import job URL
+              </Button>
+            </Card>
           </aside>
         </Reveal>
       </div>
+
+      <ImportJobUrlPanel
+        open={importPanelOpen}
+        onClose={() => setImportPanelOpen(false)}
+        onImported={() => router.refresh()}
+      />
     </section>
   );
 }
@@ -190,8 +218,8 @@ function TopMatchesPanel({
 }>) {
   return (
     <Reveal>
-      <Card className="p-5 sm:p-6">
-        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+      <Card className="overflow-hidden p-0">
+        <div className="flex flex-col gap-3 border-b border-black/[0.06] bg-white/45 px-5 py-5 sm:flex-row sm:items-start sm:justify-between sm:px-6">
           <div>
             <p className="flex items-center gap-2 text-sm font-medium text-[#5661d8]">
               <Sparkles size={16} />
@@ -199,17 +227,17 @@ function TopMatchesPanel({
             </p>
             <p className="mt-1 text-sm text-[#7a828f]">
               {belowTarget
-                ? `${matches.length} real ${activeLaneLabel.toLowerCase()} matches found. New sources will keep expanding this lane.`
+                ? `${matches.length} ${activeLaneLabel.toLowerCase()} matches found. New openings will keep expanding this lane.`
                 : `${matches.length} role-aligned openings found.`}
             </p>
           </div>
           {matches.length > 0 ? (
-            <span className="rounded-full border border-black/[0.06] bg-white px-3 py-1 text-xs text-[#687180] shadow-sm">{matches.length}</span>
+            <span className="rounded-full border border-black/[0.06] bg-white px-3 py-1 text-xs font-medium text-[#687180] shadow-sm">{matches.length} visible</span>
           ) : null}
         </div>
 
         {matches.length ? (
-          <Stagger className="divide-y divide-black/[0.06]">
+          <Stagger className="space-y-3 px-4 py-4 sm:px-5 sm:py-5">
             {matches.map((match, index) => (
               <StaggerItem key={match.job.id}>
                 <JobListRow match={match} rank={index + 1} saved={Boolean(savedJobs[match.job.id])} onSave={() => onSave(match.job.id)} />
@@ -217,7 +245,7 @@ function TopMatchesPanel({
             ))}
           </Stagger>
         ) : (
-          <p className="rounded-[22px] border border-black/[0.06] bg-[#fbfbfd] p-5 text-sm leading-6 text-[#7a828f]">
+          <p className="m-5 rounded-[22px] border border-black/[0.06] bg-[#fbfbfd] p-5 text-sm leading-6 text-[#7a828f]">
             {getEmptyText(filtersActive, lookingFor)}
           </p>
         )}
@@ -238,37 +266,42 @@ function JobListRow({
   onSave: () => void;
 }>) {
   const { job } = match;
+  const metadataParts = [
+    job.company,
+    getDisplayJobLocation(job.location, job.workType),
+    job.workType,
+    formatDate(job.postedDate)
+  ].filter(Boolean);
 
   return (
     <motion.div
-      className="group -mx-3 grid gap-4 rounded-[24px] px-3 py-5 transition hover:bg-white/55 lg:grid-cols-[56px_1fr_170px_auto] lg:items-center"
-      whileHover={{ x: 4 }}
+      className="group grid gap-4 rounded-[24px] border border-black/[0.055] bg-white/62 p-4 shadow-[0_16px_42px_rgba(20,25,34,0.055)] transition hover:border-[#cfd6ff] hover:bg-white/88 hover:shadow-[0_22px_58px_rgba(20,25,34,0.09)] sm:p-5 lg:grid-cols-[72px_minmax(0,1fr)_150px_auto] lg:items-center"
+      whileHover={{ y: -2 }}
       transition={{ type: "spring", stiffness: 320, damping: 28 }}
     >
-      <div className="relative h-12 w-12">
-        <CompanyLogo company={job.company} />
-        <span className="absolute -bottom-1 -right-1 grid h-5 min-w-5 place-items-center rounded-full border border-white bg-[#f1f3ff] px-1 text-[10px] font-semibold text-[#5661d8] shadow-sm">
+      <div className="relative h-16 w-16">
+        <CompanyLogo company={job.company} className="h-16 w-16 rounded-[22px]" />
+        <span className="absolute -bottom-1.5 -right-1.5 grid h-6 min-w-6 place-items-center rounded-full border-2 border-white bg-[#eef2ff] px-1 text-[11px] font-semibold text-[#5661d8] shadow-[0_8px_18px_rgba(20,25,34,0.12)]">
           {rank}
         </span>
       </div>
 
       <div className="min-w-0">
-        <div className="flex flex-wrap items-center gap-2 text-xs text-[#8c94a3]">
-          <span className="font-medium text-[#5f6877]">{job.company}</span>
-          <span>·</span>
-          <span>{job.location}</span>
-          <span>·</span>
-          <span>{job.workType}</span>
-          <span>·</span>
-          <span>{formatDate(job.postedDate)}</span>
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-medium text-[#8c94a3]">
+          {metadataParts.map((part, index) => (
+            <span key={`${part}-${index}`} className={index === 0 ? "text-[#4d5665]" : undefined}>
+              {index > 0 ? <span className="mr-2 text-[#c5cad4]">/</span> : null}
+              {part}
+            </span>
+          ))}
         </div>
-        <Link href={`/jobs/${job.id}`} className="mt-1 block text-lg font-semibold tracking-[-0.02em] text-[#171b24] transition hover:text-[#5661d8]">
+        <Link href={`/jobs/${job.id}`} className="mt-1.5 block text-xl font-semibold tracking-[-0.03em] text-[#171b24] transition hover:text-[#5661d8]">
           {job.title}
         </Link>
-        <p className="mt-2 line-clamp-2 text-sm leading-6 text-[#687180]">{match.reasons[0]}</p>
+        <p className="mt-2 line-clamp-2 max-w-3xl text-sm leading-6 text-[#687180]">{match.reasons[0]}</p>
         <div className="mt-3 flex flex-wrap gap-2">
           {match.badges.map((badge) => (
-            <span key={badge} className="rounded-full border border-black/[0.06] bg-white/75 px-2.5 py-1 text-xs font-medium text-[#687180] shadow-sm">
+            <span key={badge} className="rounded-full border border-[#e4e8f4] bg-[#fbfcff] px-2.5 py-1 text-xs font-medium text-[#687180] shadow-sm">
               {badge}
             </span>
           ))}
@@ -276,19 +309,25 @@ function JobListRow({
       </div>
 
       <div className="flex items-center lg:justify-end">
-        <span className={cn("rounded-full border px-3 py-1.5 text-xs font-medium", getMatchLevelTone(match.matchLevel))}>
+        <span className={cn("rounded-full border px-3.5 py-2 text-xs font-semibold shadow-sm", getMatchLevelTone(match.matchLevel))}>
           {formatMatchLevel(match.matchLevel)}
         </span>
       </div>
 
-      <div className="flex items-center gap-2 sm:justify-end">
-        <Button asChild variant="secondary" size="sm">
+      <div className="flex items-center gap-2 sm:justify-end lg:min-w-[144px]">
+        <Button asChild variant="secondary" size="sm" className="h-10 px-4 shadow-[0_12px_28px_rgba(20,25,34,0.08)]">
           <Link href={`/jobs/${job.id}`}>
             Details
             <ExternalLink size={14} />
           </Link>
         </Button>
-        <Button variant={saved ? "default" : "outline"} size="icon" aria-label="Save job" onClick={onSave}>
+        <Button
+          variant={saved ? "default" : "outline"}
+          size="icon"
+          aria-label={saved ? "Job saved" : "Save job"}
+          className="h-10 w-10 bg-white/80"
+          onClick={onSave}
+        >
           <Bookmark size={15} fill={saved ? "currentColor" : "none"} />
         </Button>
       </div>
@@ -301,30 +340,6 @@ function StatusPill({ label }: Readonly<{ label: string }>) {
     <span className="inline-flex items-center gap-2 rounded-full border border-[#dfe3ff] bg-white/70 px-3 py-1 text-xs font-medium text-[#5661d8] shadow-sm">
       {label}
     </span>
-  );
-}
-
-function CompanyLogo({ company }: Readonly<{ company: string }>) {
-  const [logoIndex, setLogoIndex] = useState(0);
-  const logoUrls = getCompanyLogoUrls(company);
-  const logoUrl = logoUrls[logoIndex];
-  const initials = getCompanyInitials(company);
-
-  return (
-    <div className="grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-2xl border border-black/[0.06] bg-white shadow-[0_10px_30px_rgba(20,25,34,0.08)]">
-      {logoUrl ? (
-        <img
-          src={logoUrl}
-          alt={`${company} logo`}
-          className="h-full w-full object-contain p-2"
-          loading="lazy"
-          referrerPolicy="no-referrer"
-          onError={() => setLogoIndex((index) => index + 1)}
-        />
-      ) : (
-        <span className="text-sm font-semibold text-[#5661d8]">{initials}</span>
-      )}
-    </div>
   );
 }
 
@@ -341,10 +356,10 @@ function formatMatchLevel(level: RadarMatch["matchLevel"]) {
 }
 
 function getEmptyText(filtersActive: boolean, lookingFor: LookingFor) {
-  if (filtersActive) return "No openings match these deterministic filters. Clear one filter or choose a broader role lane.";
-  if (lookingFor === "Internship") return "No internship postings match this resume lane yet. Run ingestion and scraping to add more student roles.";
-  if (lookingFor === "Part-time job") return "No part-time postings match this resume lane yet. Broaden the search type or add more part-time sources.";
-  return "No role-aligned openings are available yet. Keep ingestion running to grow this lane.";
+  if (filtersActive) return "No openings match these filters. Clear one filter or choose a broader role lane.";
+  if (lookingFor === "Internship") return "No internship postings match this resume lane yet. Import a job URL or check back soon.";
+  if (lookingFor === "Part-time job") return "No part-time postings match this resume lane yet. Import a job URL or choose a broader search type.";
+  return "No role-aligned openings are available yet. Import a job URL or check back after the next refresh.";
 }
 
 function FilterSelect<T extends string>({ label, value, onChange, options }: Readonly<{ label: string; value: T; onChange: (value: T) => void; options: { label: string; value: T }[] }>) {

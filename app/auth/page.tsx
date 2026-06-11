@@ -50,7 +50,7 @@ function AuthForm() {
     const supabase = createBrowserSupabaseClient();
     if (!supabase) {
       setLoading(false);
-      setError("Supabase is not configured yet.");
+      setError("Sign-in is not available right now.");
       return;
     }
 

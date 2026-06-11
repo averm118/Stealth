@@ -2,22 +2,23 @@ import { jobs as mockJobs } from "@/data/jobs";
 import { getCachedIngestedJobs } from "@/lib/job-ingestion/ingest";
 import { toUiJob } from "@/lib/job-ingestion/normalization";
 import { readSupabaseJobs, readSupabaseJobsMetadata, type JobsQuery } from "@/lib/job-ingestion/supabase-jobs";
+import { normalizeJobLocation } from "@/lib/job-location";
 import type { Job } from "@/lib/types";
 
 export async function getJobs(query: JobsQuery = {}): Promise<Job[]> {
-  const cachedJobs = applyLocalQuery((await getCachedIngestedJobs()).map(toUiJob), query);
+  const cachedJobs = applyLocalQuery((await getCachedIngestedJobs()).map(toUiJob).map(sanitizeUiJob), query);
 
   try {
     const supabaseJobs = await readSupabaseJobs(query);
     if (supabaseJobs.length) {
-      const merged = cachedJobs.length ? dedupeUiJobs([...cachedJobs, ...supabaseJobs]) : dedupeUiJobs(supabaseJobs);
+      const merged = cachedJobs.length ? dedupeUiJobs([...cachedJobs, ...supabaseJobs.map(sanitizeUiJob)]) : dedupeUiJobs(supabaseJobs.map(sanitizeUiJob));
       return merged.sort((a, b) => b.postedDate.localeCompare(a.postedDate));
     }
   } catch (error) {
     console.warn("Could not read Supabase jobs; using local fallback.", error);
   }
 
-  const merged = cachedJobs.length ? dedupeUiJobs(cachedJobs) : dedupeUiJobs(applyLocalQuery(mockJobs, query));
+  const merged = cachedJobs.length ? dedupeUiJobs(cachedJobs) : dedupeUiJobs(applyLocalQuery(mockJobs.map(sanitizeUiJob), query));
   return merged.sort((a, b) => b.postedDate.localeCompare(a.postedDate));
 }
 
@@ -57,6 +58,13 @@ function dedupeUiJobs(jobs: Job[]) {
   }
 
   return deduped;
+}
+
+function sanitizeUiJob(job: Job): Job {
+  return {
+    ...job,
+    location: normalizeJobLocation(job.location, "Not specified")
+  };
 }
 
 function applyLocalQuery(jobs: Job[], query: JobsQuery) {

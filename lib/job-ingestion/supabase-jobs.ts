@@ -1,4 +1,5 @@
 import { createServerSupabaseClient, createServiceRoleSupabaseClient } from "@/lib/supabase/server";
+import { normalizeJobLocation } from "@/lib/job-location";
 import type { IngestedJobRecord, Job, JobSource, JobSourceCategory } from "@/lib/types";
 
 export type JobsQuery = {
@@ -25,6 +26,16 @@ type UpsertJobsOptions = {
   skippedCount: number;
   warnings: string[];
   durationMs: number;
+};
+
+export type JobUrlImportAudit = {
+  userId: string;
+  url: string;
+  jobId?: string | null;
+  status: "imported" | "needs_paste" | "error";
+  extractionSource?: string | null;
+  warnings: string[];
+  error?: string | null;
 };
 
 type JobRow = {
@@ -143,12 +154,114 @@ export async function upsertSupabaseJobs(records: IngestedJobRecord[], options: 
   };
 }
 
+export async function upsertUserSubmittedJob(record: IngestedJobRecord) {
+  const supabase = createServiceRoleSupabaseClient();
+  if (!supabase) {
+    throw new Error("Missing SUPABASE_SERVICE_ROLE_KEY. User-submitted jobs require Supabase writes.");
+  }
+
+  const importedAt = record.metadata.importedAt;
+  const candidateIds = [record.id];
+
+  const existingId = await findExistingSubmittedJobId(record);
+  if (existingId && !candidateIds.includes(existingId)) {
+    record = { ...record, id: existingId };
+  }
+
+  const { data: existingById, error: existingError } = await supabase
+    .from("jobs")
+    .select("id")
+    .eq("id", record.id)
+    .maybeSingle();
+
+  if (existingError) throw existingError;
+
+  const { error } = await supabase.from("jobs").upsert(recordToRow(record, importedAt), { onConflict: "id" });
+  if (error) throw error;
+
+  return {
+    job: record,
+    inserted: !existingById,
+    updated: Boolean(existingById)
+  };
+}
+
+async function findExistingSubmittedJobId(record: IngestedJobRecord) {
+  const supabase = createServiceRoleSupabaseClient();
+  if (!supabase) return "";
+
+  const urls = [record.metadata.sourceUrl, record.applyUrl].filter(Boolean);
+  for (const value of urls) {
+    const { data: bySourceUrl, error: sourceUrlError } = await supabase
+      .from("jobs")
+      .select("id")
+      .eq("source_url", value)
+      .limit(1);
+
+    if (sourceUrlError) throw sourceUrlError;
+    if (bySourceUrl?.[0]?.id) return bySourceUrl[0].id as string;
+
+    const { data: byApplyUrl, error: applyUrlError } = await supabase
+      .from("jobs")
+      .select("id")
+      .eq("apply_url", value)
+      .limit(1);
+
+    if (applyUrlError) throw applyUrlError;
+    if (byApplyUrl?.[0]?.id) return byApplyUrl[0].id as string;
+  }
+
+  return "";
+}
+
+export async function countRecentJobUrlImports(userId: string, sinceIso: string) {
+  const supabase = createServiceRoleSupabaseClient();
+  if (!supabase) return 0;
+
+  const { count, error } = await supabase
+    .from("job_url_imports")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", userId)
+    .gte("created_at", sinceIso);
+
+  if (error) {
+    if (isMissingOptionalTableError(error)) return 0;
+    throw error;
+  }
+
+  return count ?? 0;
+}
+
+export async function writeJobUrlImportAudit(entry: JobUrlImportAudit) {
+  const supabase = createServiceRoleSupabaseClient();
+  if (!supabase) return;
+
+  const { error } = await supabase.from("job_url_imports").insert({
+    user_id: entry.userId,
+    url: entry.url,
+    job_id: entry.jobId ?? null,
+    status: entry.status,
+    extraction_source: entry.extractionSource ?? null,
+    warnings: entry.warnings,
+    error: entry.error ?? null
+  });
+
+  if (error && !isMissingOptionalTableError(error)) throw error;
+}
+
+function isMissingOptionalTableError(error: { code?: string; message?: string }) {
+  const message = error.message ?? "";
+  return error.code === "42P01" || error.code === "PGRST205" || /does not exist|schema cache|job_url_imports/i.test(message);
+}
+
 function recordToRow(record: IngestedJobRecord, importedAt: string) {
+  const location = normalizeJobLocation(record.location, "Not specified");
+
   return {
     id: record.id,
     company: record.company,
     title: record.title,
-    location: record.location,
+    location,
     work_type: record.workType,
     posted_date: record.postedDate,
     sponsorship_friendly: record.sponsorshipFriendly,
@@ -248,7 +361,7 @@ function rowToJob(row: JobRow): Job {
     id: row.id,
     company: row.company,
     title: row.title,
-    location: row.location,
+    location: normalizeJobLocation(row.location, "Not specified"),
     workType: row.work_type === "Remote" || row.work_type === "Hybrid" ? row.work_type : "On-site",
     postedDate: row.posted_date,
     sponsorshipFriendly:

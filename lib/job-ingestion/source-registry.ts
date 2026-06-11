@@ -2,7 +2,7 @@ import type { CompetitionLevel, JobSource, JobSourceCategory, SponsorshipFriendl
 
 export type JobSourceConfig = {
   id: string;
-  source: Exclude<JobSource, "mock" | "manual" | "company_careers">;
+  source: Exclude<JobSource, "mock" | "manual" | "company_careers" | "user_submitted">;
   company: string;
   boardToken?: string;
   workday?: {

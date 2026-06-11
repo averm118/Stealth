@@ -5,13 +5,13 @@ import { useParams } from "next/navigation";
 import { ArrowLeft, ExternalLink, Loader2, MapPin } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useAppState } from "@/components/app-state";
+import { CompanyLogo } from "@/components/company-logo";
 import { CoverLetterButton } from "@/components/cover-letter/cover-letter-button";
 import { TailorResumeButton } from "@/components/resume-tailor/tailor-resume-button";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Reveal, Stagger, StaggerItem } from "@/components/motion-primitives";
 import { JOB_MATCH_VERSION } from "@/lib/ai-versions";
-import { getCompanyInitials, getCompanyLogoUrls } from "@/lib/company-logos";
 import type { AiJobAnalysis, Job, SavedStatus } from "@/lib/types";
 import { cn, formatDate } from "@/lib/utils";
 
@@ -33,7 +33,7 @@ export default function JobDetailPage() {
   const match = aiAnalysis;
   const currentStatus = job ? savedJobs[job.id] ?? "saved" : "saved";
   const fitLabel = match ? (match.score >= 82 ? "Apply now" : match.score >= 68 ? "Strong fit" : match.score >= 52 ? "Review carefully" : "Low fit") : "";
-  const scoreLabel = match ? `${match.source.replace("_", " ")} analysis` : "Reading your resume against this role...";
+  const scoreLabel = match ? "AI analysis" : "Reading your resume against this role...";
 
   useEffect(() => {
     async function loadJob() {
@@ -124,7 +124,7 @@ export default function JobDetailPage() {
               {jobError ? "Job unavailable" : "Loading opportunity"}
             </h1>
             <p className="mt-3 text-sm leading-6 text-[#687180]">
-              {jobError || "Reading the normalized job catalog."}
+              {jobError || "Finding this opportunity."}
             </p>
             <Button asChild className="mt-6" variant="outline">
               <Link href="/dashboard">
@@ -355,26 +355,7 @@ function AnalysisLoadingState({ compact = false }: Readonly<{ compact?: boolean 
 }
 
 function CompanyMark({ company }: Readonly<{ company: string }>) {
-  const [logoIndex, setLogoIndex] = useState(0);
-  const logoUrls = getCompanyLogoUrls(company);
-  const logoUrl = logoUrls[logoIndex];
-
-  return (
-    <div className="grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-2xl border border-black/[0.06] bg-white text-sm font-semibold text-[#5661d8] shadow-sm">
-      {logoUrl ? (
-        <img
-          src={logoUrl}
-          alt={`${company} logo`}
-          className="h-full w-full object-contain p-2"
-          loading="lazy"
-          referrerPolicy="no-referrer"
-          onError={() => setLogoIndex((index) => index + 1)}
-        />
-      ) : (
-        getCompanyInitials(company)
-      )}
-    </div>
-  );
+  return <CompanyLogo company={company} />;
 }
 
 function DescriptionBlock({

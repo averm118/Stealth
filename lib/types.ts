@@ -4,7 +4,7 @@ export type CompetitionLevel = "low" | "medium" | "high";
 export type SavedStatus = "saved" | "applied" | "interview" | "rejected" | "offer";
 export type SignalConfidence = "low" | "medium" | "high";
 export type LookingFor = "Full-time job" | "Part-time job" | "Internship";
-export type JobSource = "mock" | "greenhouse" | "lever" | "ashby" | "workday" | "manual" | "company_careers";
+export type JobSource = "mock" | "greenhouse" | "lever" | "ashby" | "workday" | "manual" | "company_careers" | "user_submitted";
 export type JobSourceCategory = "tech" | "ai-software" | "logistics" | "retail" | "manufacturing" | "finance" | "operations";
 
 export type ResumeDocumentMetadata = {
@@ -128,6 +128,7 @@ export type ResumeDocxParagraphRole =
   | "education_line"
   | "skills_line"
   | "role_header"
+  | "date_locked_header"
   | "bullet"
   | "activity_line"
   | "blank"
@@ -140,6 +141,20 @@ export type ResumeLayoutMapParagraph = {
   text: string;
   editableText: string;
   lockedText?: string;
+  leftText?: string;
+  rightText?: string;
+  hasTabStop?: boolean;
+  tabStopSignature?: string;
+  isTerminalSection?: boolean;
+  editableCharBudget?: number;
+  contentHash?: string;
+  semanticTags?: string[];
+  safeOperations?: ResumeEditOperationType[];
+  fallbackIds?: string[];
+  insertAnchorIds?: string[];
+  nearbyBulletIds?: string[];
+  maxReplacementChars?: number;
+  lockedRegions?: string[];
   hasLockedDate: boolean;
   isBullet: boolean;
   canEdit: boolean;
@@ -174,15 +189,23 @@ export type ResumeEditOperation = {
   original: string;
   replacement: string;
   keywords?: string[];
+  priority?: number;
+  evidenceSource?: string;
+  targetKeywords?: string[];
+  fallbackParagraphIds?: string[];
+  contentHash?: string;
+  maxChars?: number;
   reason: string;
 };
 
 export type ResumeAppliedChange = ResumeEditOperation & {
   matchedText?: string;
+  repairNote?: string;
 };
 
 export type ResumeSkippedChange = Partial<ResumeEditOperation> & {
   skipReason: string;
+  skipCategory?: string;
 };
 
 export type ResumeLayoutAdjustment = {
@@ -195,6 +218,11 @@ export type ResumeDocxEditStats = {
   insertedBullets: number;
   removedLines: number;
   skippedEdits: number;
+  repairedEdits?: number;
+  convertedEdits?: number;
+  autoShortenedEdits?: number;
+  shortenedEdits?: number;
+  skippedByReason?: Record<string, number>;
   validationStatus: "valid" | "not_generated" | "failed";
   fontScale: number;
   warning?: string;

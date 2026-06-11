@@ -58,7 +58,11 @@ export async function POST(request: Request) {
         "X-Stealth-DOCX-Applied": String(tailoredDocx.stats.appliedEdits),
         "X-Stealth-DOCX-Inserted": String(tailoredDocx.stats.insertedBullets),
         "X-Stealth-DOCX-Removed": String(tailoredDocx.stats.removedLines),
-        "X-Stealth-DOCX-Skipped": String(tailoredDocx.stats.skippedEdits)
+        "X-Stealth-DOCX-Skipped": String(tailoredDocx.stats.skippedEdits),
+        "X-Stealth-DOCX-Repaired": String(tailoredDocx.stats.repairedEdits ?? 0),
+        "X-Stealth-DOCX-Shortened": String(tailoredDocx.stats.shortenedEdits ?? 0),
+        "X-Stealth-DOCX-Converted": String(tailoredDocx.stats.convertedEdits ?? 0),
+        "X-Stealth-DOCX-Skipped-By-Reason": JSON.stringify(tailoredDocx.stats.skippedByReason ?? {})
       }
     });
   } catch (error) {
@@ -96,13 +100,26 @@ function cleanEditOperations(value: unknown): ResumeEditOperation[] {
         original: record.original,
         replacement: typeof record.replacement === "string" ? record.replacement : "",
         keywords: Array.isArray(record.keywords) ? record.keywords.filter((item): item is string => typeof item === "string") : [],
+        priority: typeof record.priority === "number" && Number.isFinite(record.priority) ? Math.max(1, Math.min(5, Math.round(record.priority))) : undefined,
+        evidenceSource: typeof record.evidenceSource === "string" ? record.evidenceSource : undefined,
+        targetKeywords: Array.isArray(record.targetKeywords)
+          ? record.targetKeywords.filter((item): item is string => typeof item === "string")
+          : [],
+        fallbackParagraphIds: Array.isArray(record.fallbackParagraphIds)
+          ? record.fallbackParagraphIds.filter((item): item is string => typeof item === "string")
+          : [],
+        contentHash: typeof record.contentHash === "string" ? record.contentHash : undefined,
+        maxChars:
+          typeof record.maxChars === "number" && Number.isFinite(record.maxChars)
+            ? Math.max(24, Math.min(900, Math.round(record.maxChars)))
+            : undefined,
         reason: typeof record.reason === "string" ? record.reason : "Tailored for this role."
       };
     });
 
   return cleaned
     .filter((item): item is ResumeEditOperation => Boolean(item))
-    .slice(0, 28);
+    .slice(0, 36);
 }
 
 function isAllowedOperationType(value: unknown): value is ResumeEditOperation["type"] {

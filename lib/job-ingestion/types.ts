@@ -4,7 +4,7 @@ import type { JobSourceConfig } from "@/lib/job-ingestion/source-registry";
 export type RawPosting = Record<string, unknown>;
 
 export type NormalizerInput = {
-  source: Exclude<JobSource, "mock" | "company_careers">;
+  source: Exclude<JobSource, "mock" | "company_careers" | "user_submitted">;
   config?: JobSourceConfig;
   posting: RawPosting;
   importedAt: string;

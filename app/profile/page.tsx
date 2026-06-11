@@ -116,15 +116,9 @@ export default function ProfilePage() {
         lookingFor
       });
 
-      const hasLayoutPreservingDocx = Boolean(resumeDocument?.exactLayoutSupported);
       setUploadState({
         loading: false,
-        message:
-          extractionResult.source === "local_fallback"
-            ? `${file.name} uploaded. Local fallback used because AI extraction was unavailable.`
-            : hasLayoutPreservingDocx
-              ? `${file.name} uploaded and analyzed with AI. DOCX layout will be preserved for tailored downloads.`
-              : `${file.name} uploaded and analyzed with AI. PDF downloads will use the one-page Stealth template.`,
+        message: `${file.name} uploaded. Your profile is ready.`,
         error: "",
         fileName: file.name
       });

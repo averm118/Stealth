@@ -6,7 +6,7 @@ type GeminiMessage = {
 };
 
 type GeminiJsonOptions = {
-  task: "profile" | "match" | "tailor" | "cover_letter";
+  task: "profile" | "match" | "tailor" | "cover_letter" | "job_import";
   messages: GeminiMessage[];
   schemaName: string;
   schema: Record<string, unknown>;

@@ -21,6 +21,7 @@ Stealth is a full-stack-ready MVP for an AI Internship Radar. It helps students 
 - Settings/profile page with integration notes
 - Supabase-backed persistence for resume profile, saved jobs, and AI match scores, with localStorage as a browser fallback
 - Server-side job ingestion from approved public Greenhouse, Lever, Ashby, curated Workday feeds, Fortune 100 ATS discovery, and allowlisted company-careers scraping, capped to a curated 1000-job radar
+- Authenticated job URL import for public postings and paste-fallback imports from blocked job boards
 
 ## Getting Started
 
@@ -85,6 +86,20 @@ Read the normalized job catalog:
 curl http://localhost:3000/api/jobs
 ```
 
+Import a single job URL into Stealth from the Radar UI, or call the authenticated route:
+
+```bash
+curl -X POST http://localhost:3000/api/jobs/import-url \
+  -H "Content-Type: application/json" \
+  -d '{"url":"https://company.com/careers/job"}'
+```
+
+Apply Supabase migrations before using URL import in a new project:
+
+```bash
+supabase db push
+```
+
 Production ingestion is scheduled by Vercel Cron once daily at 08:00 UTC through `vercel.json`, which keeps the app compatible with Vercel Hobby. The cron calls `GET /api/jobs/ingest?mode=full&batchSize=30`, so each run discovers a rotating Fortune 100 batch and then refreshes approved plus discovered feeds. Set `CRON_SECRET` in Vercel so the cron request can authenticate with a Bearer token. Manual production refreshes can also be protected with:
 
 ```bash
@@ -144,6 +159,7 @@ python3 scripts/job_scraper/run.py \
 - `app/api/jobs/route.ts` - Normalized job catalog route
 - `app/api/jobs/ingest/route.ts` - Public source ingestion refresh route
 - `app/api/jobs/import-scraped/route.ts` - Secured import route for allowlisted scraper output
+- `app/api/jobs/import-url/route.ts` - Authenticated single-posting URL import route with paste fallback
 - `app/api/jobs/score/route.ts` - Gemini job-detail scoring and application strategy route
 - `lib/ai.ts` - Local fallback candidate profile extraction
 - `lib/gemini.ts` - Shared deterministic Gemini JSON client with timeout and retry handling

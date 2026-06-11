@@ -158,8 +158,8 @@ export function TailorResumePanel({ job, profile, open, onOpenChange }: Readonly
       try {
         resumeLayoutMap = await getLocalResumeLayoutMap();
       } catch (layoutError) {
-        const message = layoutError instanceof Error ? layoutError.message : "Could not read the uploaded DOCX layout.";
-        setError(`Could not read the uploaded DOCX layout. ${message}`);
+        const message = layoutError instanceof Error ? layoutError.message : "Could not read the uploaded resume layout.";
+        setError(`Could not read the uploaded resume layout. ${message}`);
         return;
       }
     }
@@ -203,8 +203,8 @@ export function TailorResumePanel({ job, profile, open, onOpenChange }: Readonly
         });
         downloadBlob(blob, `stealth-tailored-resume-${slugify(job.company)}-${slugify(job.title)}.docx`);
       } catch (error) {
-        const message = error instanceof Error ? error.message : "Please re-upload your DOCX resume.";
-        setError(`Could not create the layout-preserved DOCX. ${message}`);
+        const message = error instanceof Error ? error.message : "Please re-upload your resume.";
+        setError(`Could not create the tailored resume. ${message}`);
       }
       return;
     }
@@ -222,7 +222,7 @@ export function TailorResumePanel({ job, profile, open, onOpenChange }: Readonly
 
     if (!response.ok) {
       const details = (await response.json().catch(() => null)) as { error?: string } | null;
-      setError(details?.error || "Could not create the layout-preserved DOCX. Please try again.");
+      setError(details?.error || "Could not create the tailored resume. Please try again.");
       return;
     }
 
@@ -360,7 +360,7 @@ export function TailorResumePanel({ job, profile, open, onOpenChange }: Readonly
                     {isPdfTemplateExport && (
                       <Button variant="outline" className="sm:flex-1" onClick={() => void downloadPdf()} disabled={!result?.tailoredResumeText}>
                         <Download size={16} />
-                        Download template PDF
+                        Download PDF
                       </Button>
                     )}
                     {isTextExport && (
@@ -412,46 +412,93 @@ function PanelLoadingState() {
 
 function TailoringChangeSummary({ result }: Readonly<{ result: TailoredResumeResult }>) {
   const stats = result.docxEditStats;
-  const appliedCount = stats ? stats.appliedEdits + stats.insertedBullets + stats.removedLines : result.appliedChanges?.length ?? 0;
+  const appliedCount = stats ? stats.appliedEdits + stats.insertedBullets : result.appliedChanges?.length ?? 0;
   const insertedCount = stats?.insertedBullets ?? result.appliedChanges?.filter((change) => change.type === "insert_bullet_after").length ?? 0;
   const removedCount = stats?.removedLines ?? result.appliedChanges?.filter((change) => change.type === "remove_low_priority_paragraph").length ?? 0;
+  const shortenedCount = stats?.shortenedEdits ?? result.appliedChanges?.filter((change) => change.type === "shorten_line" || change.type === "shorten_paragraph").length ?? 0;
+  const repairedCount = stats?.repairedEdits ?? result.appliedChanges?.filter((change) => Boolean(change.repairNote)).length ?? 0;
+  const convertedCount = stats?.convertedEdits ?? result.appliedChanges?.filter((change) => change.repairNote?.toLowerCase().includes("converted")).length ?? 0;
   const skippedCount = result.skippedChanges?.filter((change) => change.skipReason !== "Preview only. Generate to apply this change.").length ?? 0;
+  const layoutSkippedCount =
+    (stats?.skippedByReason?.layout_locked_removal ?? 0) +
+    (stats?.skippedByReason?.unsafe_insertion ?? 0) +
+    (stats?.skippedByReason?.layout_retry ?? 0) +
+    (stats?.skippedByReason?.visual_gap_risk ?? 0) +
+    (stats?.skippedByReason?.protected_layout ?? 0);
+  const skippedReasons = Object.entries(stats?.skippedByReason ?? {})
+    .filter(([, count]) => count > 0)
+    .map(([reason, count]) => `${formatSkipReason(reason)} ${count}`)
+    .join(", ");
   const fontScale = result.layoutAdjustment?.fontScale ?? 1;
 
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap gap-2">
-      <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700">
-        Applied {appliedCount} {appliedCount === 1 ? "edit" : "edits"}
-      </span>
-      {insertedCount > 0 && (
         <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700">
-          Inserted {insertedCount} {insertedCount === 1 ? "bullet" : "bullets"}
+          Applied {appliedCount} {appliedCount === 1 ? "edit" : "edits"}
         </span>
-      )}
-      {removedCount > 0 && (
-        <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600">
-          Removed {removedCount} low-priority {removedCount === 1 ? "line" : "lines"}
-        </span>
-      )}
-      {fontScale < 0.995 && (
-        <span className="rounded-full border border-[#cfd5ff] bg-[#f1f3ff] px-3 py-1.5 text-xs font-medium text-[#5661d8]">
-          Font adjusted for one-page fit
-        </span>
-      )}
-      {skippedCount > 0 && (
-        <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-700">
-          {skippedCount} unmapped {skippedCount === 1 ? "edit" : "edits"}
-        </span>
-      )}
+        {insertedCount > 0 && (
+          <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700">
+            Inserted safely {insertedCount} {insertedCount === 1 ? "bullet" : "bullets"}
+          </span>
+        )}
+        {shortenedCount > 0 && (
+          <span className="rounded-full border border-[#cfd5ff] bg-[#f1f3ff] px-3 py-1.5 text-xs font-medium text-[#5661d8]">
+            Shortened {shortenedCount} {shortenedCount === 1 ? "line" : "lines"}
+          </span>
+        )}
+        {repairedCount > 0 && (
+          <span className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-medium text-sky-700">
+            Repaired {repairedCount} {repairedCount === 1 ? "mapping" : "mappings"}
+          </span>
+        )}
+        {convertedCount > 0 && (
+          <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600">
+            Converted {convertedCount} to in-place {convertedCount === 1 ? "edit" : "edits"}
+          </span>
+        )}
+        {!stats && removedCount > 0 && (
+          <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600">
+            Removed {removedCount} low-priority {removedCount === 1 ? "line" : "lines"}
+          </span>
+        )}
+        {fontScale < 0.995 && (
+          <span className="rounded-full border border-[#cfd5ff] bg-[#f1f3ff] px-3 py-1.5 text-xs font-medium text-[#5661d8]">
+            Font adjusted for one-page fit
+          </span>
+        )}
+        {skippedCount > 0 && (
+          <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-700">
+            Skipped {skippedCount} {skippedCount === 1 ? "edit" : "edits"}
+          </span>
+        )}
+        {layoutSkippedCount > 0 && (
+          <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-700">
+            Skipped for layout {layoutSkippedCount}
+          </span>
+        )}
       </div>
       {stats?.warning && (
         <p className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-800">
           {stats.warning}
         </p>
       )}
+      {skippedReasons && (
+        <p className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-800">
+          Skipped by reason: {skippedReasons}
+        </p>
+      )}
+      {!stats && removedCount > 0 && (
+        <p className="rounded-2xl border border-slate-200 bg-white/80 px-4 py-3 text-xs leading-5 text-slate-600">
+          Removed only after paired replacement checks.
+        </p>
+      )}
     </div>
   );
+}
+
+function formatSkipReason(value: string) {
+  return value.replace(/_/g, " ");
 }
 
 function KeywordList({ items, fallback }: Readonly<{ items: string[]; fallback: string }>) {
@@ -578,15 +625,15 @@ function getResumeExportMode(profile: CandidateProfile, resumeDocument?: ResumeD
 function getExportBadgeLabel(mode: ResumeExportMode) {
   switch (mode) {
     case "docx":
-      return "Layout preserved: DOCX";
+      return "Layout preserved";
     case "pdf":
-      return "Template export: PDF";
+      return "Clean PDF export";
     case "markdown":
-      return "Text export: MD";
+      return "Markdown export";
     case "text":
-      return "Text export: TXT";
+      return "Text export";
     default:
-      return "Template export";
+      return "Clean export";
   }
 }
 
@@ -594,13 +641,13 @@ function getExportModeCopy(mode: ResumeExportMode) {
   switch (mode) {
     case "docx":
       return {
-        title: "Exact layout preserved.",
-        body: "Your tailored download keeps the uploaded Word layout. For an exact PDF, open the tailored DOCX in Word or Google Docs and export as PDF."
+        title: "Layout preserved.",
+        body: "Your tailored download keeps the structure and styling from your uploaded resume."
       };
     case "pdf":
       return {
-        title: "Template PDF export.",
-        body: "Your uploaded PDF is used for resume text and matching. Exact layout preservation requires uploading a DOCX version."
+        title: "Clean PDF export.",
+        body: "Your uploaded resume is used for the content, then exported in a polished one-page format."
       };
     case "markdown":
       return {
@@ -614,8 +661,8 @@ function getExportModeCopy(mode: ResumeExportMode) {
       };
     default:
       return {
-        title: "Template export.",
-        body: "Upload a DOCX resume when you want exact Word layout preservation."
+        title: "Clean export.",
+        body: "Your tailored resume will use a polished, apply-ready format."
       };
   }
 }

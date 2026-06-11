@@ -4,9 +4,9 @@ import Link from "next/link";
 import { BookmarkCheck, ExternalLink, Inbox, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useAppState } from "@/components/app-state";
+import { CompanyLogo } from "@/components/company-logo";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { getCompanyInitials, getCompanyLogoUrls } from "@/lib/company-logos";
 import { Job, SavedStatus } from "@/lib/types";
 import { cn, formatDate } from "@/lib/utils";
 import { Reveal, Stagger, StaggerItem } from "@/components/motion-primitives";
@@ -116,7 +116,7 @@ function TrackerRow({
 }>) {
   return (
     <div className="-mx-3 grid gap-4 rounded-[24px] px-3 py-5 transition hover:bg-white/55 lg:grid-cols-[56px_1fr_150px_auto] lg:items-center">
-      <div className="relative h-12 w-12">
+      <div className="relative h-12 w-14">
         <CompanyLogo company={job.company} />
         <span className="absolute -bottom-1 -right-1 grid h-5 min-w-5 place-items-center rounded-full border border-white bg-[#f1f3ff] px-1 text-[10px] font-semibold text-[#5661d8] shadow-sm">
           {rank}
@@ -168,30 +168,6 @@ function TrackerRow({
           <Trash2 size={15} />
         </Button>
       </div>
-    </div>
-  );
-}
-
-function CompanyLogo({ company }: Readonly<{ company: string }>) {
-  const [logoIndex, setLogoIndex] = useState(0);
-  const logoUrls = getCompanyLogoUrls(company);
-  const logoUrl = logoUrls[logoIndex];
-  const initials = getCompanyInitials(company);
-
-  return (
-    <div className="grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-2xl border border-black/[0.06] bg-white shadow-[0_10px_30px_rgba(20,25,34,0.08)]">
-      {logoUrl ? (
-        <img
-          src={logoUrl}
-          alt={`${company} logo`}
-          className="h-full w-full object-contain p-2"
-          loading="lazy"
-          referrerPolicy="no-referrer"
-          onError={() => setLogoIndex((index) => index + 1)}
-        />
-      ) : (
-        <span className="text-sm font-semibold text-[#5661d8]">{initials}</span>
-      )}
     </div>
   );
 }

@@ -8,6 +8,7 @@ import type {
 } from "@/lib/types";
 import type { JobSourceConfig } from "@/lib/job-ingestion/source-registry";
 import type { ManualJobInput, NormalizerInput, RawPosting, ScrapedJobInput } from "@/lib/job-ingestion/types";
+import { normalizeJobLocation } from "@/lib/job-location";
 
 const skillTaxonomy = [
   "excel",
@@ -346,7 +347,7 @@ function buildRecord({
   importedAt,
   textForSkills
 }: {
-  source: Exclude<JobSource, "mock" | "manual" | "company_careers">;
+    source: Exclude<JobSource, "mock" | "manual" | "company_careers" | "user_submitted">;
   config: JobSourceConfig;
   sourceJobId: string;
   sourceUrl: string;
@@ -400,7 +401,10 @@ export function dedupeJobs(records: IngestedJobRecord[]) {
 
 export function toUiJob(record: IngestedJobRecord): Job {
   const { metadata: _metadata, ...job } = record;
-  return job;
+  return {
+    ...job,
+    location: normalizeJobLocation(job.location, "Not specified")
+  };
 }
 
 export function isRelevantStudentRole(record: IngestedJobRecord) {
@@ -522,9 +526,8 @@ function normalizeDate(value: unknown, importedAt: string) {
 }
 
 function normalizeLocation(value: string) {
-  const cleaned = cleanText(value);
-  if (!cleaned) return "";
-  return cleaned.replace(/\s*\([^)]*\)\s*/g, " ").replace(/\s+/g, " ").trim();
+  const cleaned = cleanText(value).replace(/\s*\([^)]*\)\s*/g, " ");
+  return normalizeJobLocation(cleaned, "");
 }
 
 function normalizeDescription(value: string) {

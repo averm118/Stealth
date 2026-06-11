@@ -10,7 +10,7 @@ export type DiscoveryMode = "ingest" | "discover" | "full";
 export type DiscoveredJobSource = {
   id: string;
   company: string;
-  source: Exclude<JobSource, "mock" | "manual" | "company_careers">;
+  source: Exclude<JobSource, "mock" | "manual" | "company_careers" | "user_submitted">;
   boardToken?: string;
   workday?: JobSourceConfig["workday"];
   category: CompanyTarget["category"];
@@ -235,7 +235,7 @@ function supportedSource({
   discoveredAt
 }: {
   target: CompanyTarget;
-  source: Exclude<JobSource, "mock" | "manual" | "company_careers">;
+  source: Exclude<JobSource, "mock" | "manual" | "company_careers" | "user_submitted">;
   boardToken?: string;
   workday?: JobSourceConfig["workday"];
   discoveredFromUrl: string;
@@ -410,7 +410,7 @@ function rowToDiscoveredSource(row: Record<string, unknown>): DiscoveredJobSourc
   return {
     id: stringValue(row.id),
     company: stringValue(row.company),
-    source: stringValue(row.source) as Exclude<JobSource, "mock" | "manual" | "company_careers">,
+    source: stringValue(row.source) as Exclude<JobSource, "mock" | "manual" | "company_careers" | "user_submitted">,
     boardToken: stringValue(row.board_token) || undefined,
     workday: isRecord(row.workday) ? (row.workday as JobSourceConfig["workday"]) : undefined,
     category: stringValue(row.category) as CompanyTarget["category"],

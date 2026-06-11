@@ -64,6 +64,7 @@ Avoid:
 - Google Gemini API integration for job-detail AI analysis and application strategy
 - Shared deterministic Gemini client with task-specific model routing, timeout, retry, and strict JSON parsing
 - Approved public job-feed ingestion foundation
+- Authenticated single-job URL import with safe public extraction, Gemini normalization when needed, and paste fallback for blocked job boards
 
 ## Main Routes
 
@@ -146,6 +147,8 @@ Dashboard design intent:
 - Fast to scan.
 - Minimal and action-oriented.
 - Avoid returning to a generic grid of oversized job cards.
+
+Radar also includes an `Import job URL` flow. It opens a right-side panel where authenticated users can paste a job URL from a company site or job board. The server tries approved ATS/public structured extraction first, uses Gemini only for messy public text normalization, and asks for pasted job text when a source is blocked or login-gated. Successful imports are stored as `user_submitted` jobs in Supabase and open at `/jobs/[id]`.
 
 ## Job Detail Current UX
 

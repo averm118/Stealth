@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import type { ReactNode } from "react";
-import { motion, useScroll, useTransform } from "framer-motion";
+import { useState, type ReactNode } from "react";
+import { motion, useMotionValueEvent, useScroll } from "framer-motion";
 import { BarChart3, BookmarkCheck, Radar, Settings, UserRound } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { FloatingOrbs, PageTransition } from "@/components/motion-primitives";
@@ -18,18 +18,38 @@ const navItems = [
 
 export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
   const pathname = usePathname();
+  const isLandingPage = pathname === "/";
   const { scrollY } = useScroll();
-  const headerShadow = useTransform(scrollY, [0, 80], ["0 0 0 rgba(20,25,34,0)", "0 18px 46px rgba(20,25,34,0.08)"]);
+  const [isHeaderScrolled, setIsHeaderScrolled] = useState(false);
+
+  useMotionValueEvent(scrollY, "change", (latest) => {
+    const scrolled = latest > 18;
+    setIsHeaderScrolled((current) => (current === scrolled ? current : scrolled));
+  });
 
   return (
     <div className="min-h-screen">
       <FloatingOrbs />
       <div className="pointer-events-none fixed inset-x-0 top-0 -z-10 h-[620px] terminal-grid opacity-80" />
       <motion.header
-        style={{ boxShadow: headerShadow }}
-        className="sticky top-0 z-50 border-b border-black/[0.05] bg-[#fbfaf7]/72 backdrop-blur-2xl"
+        className={cn(
+          "fixed inset-x-0 top-0 z-50 overflow-hidden border-b transition-[background-color,border-color,box-shadow,backdrop-filter] duration-500",
+          isHeaderScrolled
+            ? "border-white/35 bg-white/15 shadow-[0_18px_54px_rgba(30,42,96,0.10)] backdrop-blur-2xl supports-[backdrop-filter]:bg-white/10"
+            : "border-transparent bg-transparent shadow-none backdrop-blur-none"
+        )}
       >
-        <div className="mx-auto flex h-20 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
+        <div
+          className={cn(
+            "pointer-events-none absolute inset-0 transition-opacity duration-500",
+            isHeaderScrolled ? "opacity-100" : "opacity-0"
+          )}
+        >
+          <div className="absolute inset-0 bg-[linear-gradient(112deg,rgba(255,255,255,0.24),rgba(255,255,255,0.08)_48%,rgba(226,233,255,0.18))]" />
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_0%,rgba(86,97,216,0.08),transparent_34%),radial-gradient(circle_at_82%_18%,rgba(20,184,166,0.06),transparent_30%),linear-gradient(180deg,rgba(255,255,255,0.10),rgba(255,255,255,0.02))]" />
+          <div className="absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-white/45 to-transparent" />
+        </div>
+        <div className="relative mx-auto flex h-20 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
           <Link href="/" className="flex items-center gap-3">
             <motion.span
               whileHover={{ rotate: 8, scale: 1.04 }}
@@ -73,7 +93,12 @@ export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
           <AuthStatus />
         </div>
       </motion.header>
-      <main className="relative z-10 mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+      <main
+        className={cn(
+          "relative z-10",
+          isLandingPage ? "px-0 py-0" : "mx-auto max-w-7xl px-4 pb-8 pt-28 sm:px-6 lg:px-8"
+        )}
+      >
         <PageTransition key={pathname}>{children}</PageTransition>
       </main>
       <nav className="fixed inset-x-3 bottom-3 z-50 grid grid-cols-4 gap-1 rounded-full border border-black/[0.06] bg-white/85 p-1 shadow-[0_18px_50px_rgba(20,25,34,0.12)] backdrop-blur-xl md:hidden">
