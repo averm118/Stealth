@@ -22,6 +22,12 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Reveal, Stagger, StaggerItem } from "@/components/motion-primitives";
+import { LandingCommunityTrust, ResumeIntegrityPanel } from "@/components/landing-trust";
+import {
+  EmployerBrandWall,
+  JobSourceBanner,
+  ResumeFormatBanner
+} from "@/components/brand-ecosystem";
 import { jobs } from "@/data/jobs";
 import { cn } from "@/lib/utils";
 import type { Job } from "@/lib/types";
@@ -240,6 +246,10 @@ export default function LandingPage() {
         </Reveal>
       </section>
 
+      <section className="relative mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+        <LandingCommunityTrust />
+      </section>
+
       <section className="relative mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
         <MinimalSignalStrip />
       </section>
@@ -257,7 +267,17 @@ export default function LandingPage() {
       </section>
 
       <section className="relative mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
+        <Reveal>
+          <EmployerBrandWall />
+        </Reveal>
+      </section>
+
+      <section className="relative mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
         <TailoringShowcase />
+      </section>
+
+      <section className="relative mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
+        <ResumeIntegrityPanel />
       </section>
 
       <section className="relative mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
@@ -367,10 +387,15 @@ function HeroProductScene({
             </div>
           </div>
 
-          <div className="mt-8 grid gap-3 sm:grid-cols-3">
-            <SceneMetric label="roles" value={`${stats.roles}+`} icon={BriefcaseBusiness} />
-            <SceneMetric label="companies" value={`${stats.companies}+`} icon={MapPinned} />
-            <SceneMetric label="sponsors" value={`${stats.sponsorAware}+`} icon={ShieldCheck} />
+          <div className="mt-8">
+            <div className="grid gap-3 sm:grid-cols-3">
+              <SceneMetric label="roles covered" value={`${stats.roles}+`} icon={BriefcaseBusiness} />
+              <SceneMetric label="companies indexed" value={`${stats.companies}+`} icon={MapPinned} />
+              <SceneMetric label="sponsor-aware roles" value={`${stats.sponsorAware}+`} icon={ShieldCheck} />
+            </div>
+            <p className="mt-3 text-xs font-medium leading-5 text-[#687180]">
+              Catalog coverage varies with source availability and refresh timing.
+            </p>
           </div>
         </motion.div>
 
@@ -559,6 +584,7 @@ function TailoringShowcase() {
           </div>
 
           <ResumeDocumentFlow />
+          <ResumeFormatBanner />
 
           <div className="grid divide-y divide-[#dfe3ff] md:grid-cols-3 md:divide-x md:divide-y-0">
             {resumeRewriteRows.map((row) => (
@@ -738,10 +764,15 @@ function RadarConsole({
             Choose a search lane and watch the strongest openings reshuffle.
           </h2>
         </div>
-        <div className="grid gap-3 border-t border-[#dfe3ff] p-5 sm:grid-cols-3 sm:p-7 lg:border-l lg:border-t-0">
-          <MiniStat label="Active roles" value={`${stats.roles}+`} />
-          <MiniStat label="Companies" value={`${stats.companies}+`} />
-          <MiniStat label="Sponsor-aware" value={`${stats.sponsorAware}+`} />
+        <div className="border-t border-[#dfe3ff] p-5 sm:p-7 lg:border-l lg:border-t-0">
+          <div className="grid gap-3 sm:grid-cols-3">
+            <MiniStat label="Roles covered" value={`${stats.roles}+`} />
+            <MiniStat label="Companies indexed" value={`${stats.companies}+`} />
+            <MiniStat label="Sponsor-aware roles" value={`${stats.sponsorAware}+`} />
+          </div>
+          <p className="mt-3 text-xs font-medium text-[#687180]">
+            Coverage varies by source availability and refresh timing.
+          </p>
         </div>
       </div>
 
@@ -846,6 +877,7 @@ function RadarConsole({
           </div>
         </div>
       </div>
+      <JobSourceBanner />
     </div>
   );
 }
