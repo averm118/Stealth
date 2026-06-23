@@ -2,8 +2,8 @@
 
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { useMemo, useState } from "react";
-import { motion } from "framer-motion";
+import { useMemo, useRef, useState } from "react";
+import { motion, useInView, useReducedMotion } from "framer-motion";
 import {
   ArrowRight,
   BookmarkCheck,
@@ -156,7 +156,7 @@ const documentPreviewCards = [
   {
     label: "Original resume",
     title: "Inventory reports",
-    tone: "text-[#7b8495]",
+    tone: "text-[#505b70]",
     accent: "bg-[#c8cedf]",
     paper: "bg-white/50",
     lines: ["w-10/12", "w-8/12", "w-11/12", "w-7/12"]
@@ -205,7 +205,7 @@ export default function LandingPage() {
       <section className="relative mx-auto flex min-h-screen max-w-7xl flex-col items-center justify-center px-4 pb-16 pt-32 sm:px-6 lg:px-8">
         <div className="mx-auto w-full max-w-5xl text-center">
           <Reveal>
-            <div className="mx-auto inline-flex max-w-[17rem] items-center gap-2 rounded-full border border-white/70 bg-white/40 px-3 py-2 text-xs font-medium text-[#566074] shadow-[0_18px_48px_rgba(86,97,216,0.14)] backdrop-blur-xl ring-1 ring-[#dfe3ff]/40 sm:max-w-full sm:px-4 sm:text-sm">
+            <div className="mx-auto inline-flex max-w-[17rem] items-center gap-2 rounded-full border border-white/70 bg-white/40 px-3 py-2 text-xs font-medium text-[#3f4a5e] shadow-[0_18px_48px_rgba(86,97,216,0.14)] backdrop-blur-xl ring-1 ring-[#dfe3ff]/40 sm:max-w-full sm:px-4 sm:text-sm">
               <Sparkles size={16} className="text-[#5661d8]" />
               <span className="truncate">Resume in. Matched roles out.</span>
             </div>
@@ -321,8 +321,8 @@ export default function LandingPage() {
 
 function LandingBackground() {
   return (
-    <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden bg-[#eaf0ff]">
-      <WavesShader className="absolute inset-0 h-full w-full opacity-[0.92] mix-blend-multiply" />
+    <div className="pointer-events-none fixed inset-0 -z-10 h-[100dvh] w-screen overflow-hidden bg-[#eaf0ff] [contain:paint]">
+      <WavesShader sizing="viewport" pixelRatioCap={1.25} className="absolute inset-0 opacity-[0.92] mix-blend-multiply" />
       <div className="absolute inset-0 bg-[linear-gradient(118deg,rgba(86,97,216,0.34),transparent_33%),linear-gradient(248deg,rgba(8,145,178,0.24),transparent_30%),linear-gradient(32deg,rgba(255,132,73,0.24),transparent_31%),linear-gradient(305deg,rgba(124,58,237,0.20),transparent_34%),linear-gradient(180deg,rgba(246,248,255,0.12)_0%,rgba(255,255,255,0.16)_42%,rgba(235,240,255,0.18)_100%)]" />
       <div className="absolute -left-[22vw] top-[14vh] h-[46rem] w-[44rem] -rotate-12 bg-[linear-gradient(135deg,rgba(20,28,58,0.26),rgba(20,28,58,0.06)_42%,transparent_72%)] blur-3xl" />
       <div className="absolute -right-[20vw] top-[4vh] h-[38rem] w-[42rem] rotate-12 bg-[linear-gradient(225deg,rgba(86,97,216,0.30),rgba(20,184,166,0.12)_48%,transparent_76%)] blur-3xl" />
@@ -364,7 +364,7 @@ function HeroProductScene({
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
           transition={{ delay: 0.08, duration: 0.55 }}
-          className="flex min-h-[320px] flex-col justify-between rounded-[30px] border border-white/70 bg-white/50 p-5 shadow-[0_26px_80px_rgba(20,28,58,0.14)] backdrop-blur-xl"
+          className="flex min-h-[320px] flex-col justify-between rounded-[30px] border border-white/70 bg-white/50 p-5 shadow-[0_26px_80px_rgba(20,28,58,0.14)]"
         >
           <div>
             <div className="mb-5 flex items-center justify-between gap-3">
@@ -376,11 +376,11 @@ function HeroProductScene({
                 92% fit
               </span>
             </div>
-            <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#7b8495]">{primaryJob.company}</p>
+            <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#505b70]">{primaryJob.company}</p>
             <h3 className="mt-2 text-balance text-3xl font-semibold leading-tight text-[#10141d]">{primaryJob.title}</h3>
             <div className="mt-5 flex flex-wrap gap-2">
               {primaryJob.skills.slice(0, 4).map((skill) => (
-                <span key={skill} className="rounded-full border border-[#dfe3ff] bg-white/50 px-3 py-1.5 text-xs font-semibold text-[#4b5563] shadow-sm backdrop-blur-xl">
+                <span key={skill} className="rounded-full border border-[#dfe3ff] bg-white/50 px-3 py-1.5 text-xs font-semibold text-[#4b5563] shadow-sm">
                   {skill}
                 </span>
               ))}
@@ -393,7 +393,7 @@ function HeroProductScene({
               <SceneMetric label="companies indexed" value={`${stats.companies}+`} icon={MapPinned} />
               <SceneMetric label="sponsor-aware roles" value={`${stats.sponsorAware}+`} icon={ShieldCheck} />
             </div>
-            <p className="mt-3 text-xs font-medium leading-5 text-[#687180]">
+            <p className="mt-3 text-xs font-medium leading-5 text-[#465166]">
               Catalog coverage varies with source availability and refresh timing.
             </p>
           </div>
@@ -423,10 +423,10 @@ function SceneMetric({
   icon: typeof BriefcaseBusiness;
 }>) {
   return (
-    <div className="rounded-2xl border border-white/60 bg-white/40 p-3 shadow-sm backdrop-blur-xl">
+    <div className="rounded-2xl border border-white/60 bg-white/40 p-3 shadow-sm">
       <Icon size={16} className="text-[#5661d8]" />
       <p className="mt-3 text-2xl font-semibold leading-none text-[#10141d]">{value}</p>
-      <p className="mt-1 text-xs font-medium text-[#687180]">{label}</p>
+      <p className="mt-1 text-xs font-medium text-[#465166]">{label}</p>
     </div>
   );
 }
@@ -449,14 +449,14 @@ function DocumentPicture({
     : ["w-10/12", "w-8/12", "w-11/12", "w-7/12", "w-9/12"];
 
   return (
-    <figure className="relative min-h-[320px] overflow-hidden rounded-[30px] border border-white/70 bg-white/50 p-5 shadow-[0_26px_80px_rgba(20,28,58,0.14)] backdrop-blur-xl">
+    <figure className="relative min-h-[320px] overflow-hidden rounded-[30px] border border-white/70 bg-white/50 p-5 shadow-[0_26px_80px_rgba(20,28,58,0.14)]">
       <div className={cn("absolute inset-x-0 top-0 h-1.5", accent)} />
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className={cn("text-xs font-semibold uppercase tracking-[0.16em]", tone)}>{eyebrow}</p>
           <h3 className="mt-2 text-xl font-semibold text-[#10141d]">{title}</h3>
         </div>
-        <div className={cn("flex h-10 w-10 items-center justify-center rounded-2xl bg-white/50 shadow-sm ring-1 ring-[#dfe3ff] backdrop-blur-xl", tone)}>
+        <div className={cn("flex h-10 w-10 items-center justify-center rounded-2xl bg-white/50 shadow-sm ring-1 ring-[#dfe3ff]", tone)}>
           <FileText size={18} />
         </div>
       </div>
@@ -464,7 +464,7 @@ function DocumentPicture({
       <div className="mt-7 space-y-4">
         {["Experience", "Projects", "Skills"].map((section, sectionIndex) => (
           <div key={section}>
-            <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#9aa3b5]">{section}</p>
+            <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#667186]">{section}</p>
             <div className="space-y-2">
               {lines.slice(0, sectionIndex === 1 ? 2 : 1).map((width, lineIndex) => (
                 <motion.div
@@ -503,7 +503,7 @@ function MinimalSignalStrip() {
           <StaggerItem key={step.id}>
             <motion.article
               whileHover={{ y: -5 }}
-              className="group relative min-h-[190px] overflow-hidden rounded-[28px] border border-white/60 bg-white/30 p-5 shadow-[0_24px_78px_rgba(86,97,216,0.13)] backdrop-blur-xl ring-1 ring-[#dfe3ff]/40"
+              className="group relative min-h-[190px] overflow-hidden rounded-[28px] border border-white/60 bg-white/30 p-5 shadow-[0_24px_78px_rgba(86,97,216,0.13)] ring-1 ring-[#dfe3ff]/40"
             >
               <div className="absolute inset-x-0 top-0 h-1 bg-[#eef1ff]">
                 <motion.div
@@ -514,10 +514,10 @@ function MinimalSignalStrip() {
                   transition={{ delay: index * 0.07, duration: 0.65 }}
                 />
               </div>
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/50 text-[#5661d8] shadow-sm ring-1 ring-[#dfe3ff] backdrop-blur-xl">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/50 text-[#5661d8] shadow-sm ring-1 ring-[#dfe3ff]">
                 <Icon size={19} />
               </div>
-              <p className="mt-7 text-xs font-semibold uppercase tracking-[0.16em] text-[#7b8495]">0{index + 1} / {step.label}</p>
+              <p className="mt-7 text-xs font-semibold uppercase tracking-[0.16em] text-[#505b70]">0{index + 1} / {step.label}</p>
               <h2 className="mt-2 text-2xl font-semibold leading-tight text-[#10141d]">{step.title}</h2>
             </motion.article>
           </StaggerItem>
@@ -547,7 +547,7 @@ function TailoringShowcase() {
 
           <div className="mt-8 grid gap-3 sm:grid-cols-2">
             {tailoringProof.map((item) => (
-              <div key={item.title} className="rounded-2xl border border-white/60 bg-white/40 p-4 shadow-[0_14px_40px_rgba(86,97,216,0.10)] backdrop-blur-xl">
+              <div key={item.title} className="rounded-2xl border border-white/60 bg-white/40 p-4 shadow-[0_14px_40px_rgba(86,97,216,0.10)]">
                 <p className="text-base font-semibold text-[#111827]">{item.title}</p>
                 <p className="mt-1 text-sm font-medium text-[#475467]">{item.copy}</p>
               </div>
@@ -566,7 +566,7 @@ function TailoringShowcase() {
               </p>
               <div className="mt-4 flex flex-wrap gap-2">
                 {["forecasting", "SAP", "KPIs", "SQL"].map((keyword) => (
-                  <span key={keyword} className="rounded-full border border-[#dfe3ff] bg-white/50 px-3 py-1.5 text-xs font-semibold text-[#384253] shadow-sm backdrop-blur-xl">
+                  <span key={keyword} className="rounded-full border border-[#dfe3ff] bg-white/50 px-3 py-1.5 text-xs font-semibold text-[#384253] shadow-sm">
                     {keyword}
                   </span>
                 ))}
@@ -589,7 +589,7 @@ function TailoringShowcase() {
           <div className="grid divide-y divide-[#dfe3ff] md:grid-cols-3 md:divide-x md:divide-y-0">
             {resumeRewriteRows.map((row) => (
               <div key={row.before} className="p-5">
-                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#7b8495]">Before</p>
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#505b70]">Before</p>
                 <p className="mt-2 text-sm font-medium text-[#4b5563]">{row.before}</p>
                 <p className="mt-5 text-xs font-semibold uppercase tracking-[0.14em] text-[#5661d8]">After</p>
                 <p className="mt-2 text-base font-semibold text-[#111827]">{row.after}</p>
@@ -604,9 +604,15 @@ function TailoringShowcase() {
 
 function MinimalToolGallery() {
   return (
-    <div className="relative overflow-hidden rounded-[36px] border border-white/60 bg-white/20 p-5 shadow-[0_34px_110px_rgba(86,97,216,0.15)] backdrop-blur-xl ring-1 ring-[#dfe3ff]/40 sm:p-7">
-      <div className="pointer-events-none absolute inset-0 opacity-60">
-        <WavesShader className="h-full w-full" />
+    <div className="relative overflow-hidden rounded-[36px] border border-white/60 bg-white/20 p-5 shadow-[0_34px_110px_rgba(86,97,216,0.15)] backdrop-blur-xl ring-1 ring-[#dfe3ff]/40 [contain:paint] sm:p-7">
+      <div className="pointer-events-none absolute inset-0 opacity-60 [contain:paint]">
+        <WavesShader
+          sizing="element"
+          pixelRatioCap={1.25}
+          pauseWhenOffscreen
+          intersectionMargin="0px"
+          className="h-full w-full"
+        />
       </div>
       <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(120deg,rgba(255,255,255,0.42),rgba(255,255,255,0.10)_52%,rgba(86,97,216,0.10))]" />
       <div className="relative">
@@ -626,7 +632,7 @@ function MinimalToolGallery() {
               <StaggerItem key={module.title}>
                 <motion.article
                   whileHover={{ y: -6 }}
-                  className="relative min-h-[210px] overflow-hidden rounded-[26px] border border-white/60 bg-white/40 p-5 shadow-[0_24px_74px_rgba(86,97,216,0.13)] backdrop-blur-xl"
+                  className="relative min-h-[210px] overflow-hidden rounded-[26px] border border-white/60 bg-white/40 p-5 shadow-[0_24px_74px_rgba(86,97,216,0.13)]"
                 >
                   <div className={cn("flex h-12 w-12 items-center justify-center rounded-2xl", module.accent)}>
                     <Icon size={20} />
@@ -648,14 +654,18 @@ function MinimalToolGallery() {
 }
 
 function ResumeDocumentFlow() {
+  const flowRef = useRef<HTMLDivElement>(null);
+  const flowInView = useInView(flowRef, { margin: "180px 0px" });
+  const reduceMotion = useReducedMotion();
+
   return (
-    <div className="border-b border-[#dfe3ff] bg-white/30 p-5">
+    <div ref={flowRef} className="border-b border-[#dfe3ff] bg-white/30 p-5">
       <div className="mb-4 flex items-center justify-between gap-3">
         <p className="flex items-center gap-2 text-sm font-semibold text-[#384253]">
           <Sparkles size={16} className="text-[#5661d8]" />
           Evidence flow
         </p>
-        <span className="rounded-full border border-[#dfe3ff] bg-white/50 px-3 py-1 text-xs font-semibold text-[#5661d8] shadow-sm backdrop-blur-xl">
+        <span className="rounded-full border border-[#dfe3ff] bg-white/50 px-3 py-1 text-xs font-semibold text-[#5661d8] shadow-sm">
           no template swap
         </span>
       </div>
@@ -689,7 +699,7 @@ function ResumeDocumentFlow() {
                 <p className={cn("text-[11px] font-semibold uppercase tracking-[0.14em]", doc.tone)}>{doc.label}</p>
                 <p className="mt-1 text-sm font-semibold text-[#111827]">{doc.title}</p>
               </div>
-              <div className={cn("flex h-8 w-8 items-center justify-center rounded-xl bg-white/50 shadow-sm ring-1 ring-[#dfe3ff] backdrop-blur-xl", doc.tone)}>
+              <div className={cn("flex h-8 w-8 items-center justify-center rounded-xl bg-white/50 shadow-sm ring-1 ring-[#dfe3ff]", doc.tone)}>
                 <FileText size={15} />
               </div>
             </div>
@@ -709,7 +719,7 @@ function ResumeDocumentFlow() {
             </div>
 
             <motion.div
-              className="absolute bottom-4 left-4 right-4 rounded-xl border border-[#dfe3ff] bg-white/40 p-2 backdrop-blur-xl"
+              className="absolute bottom-4 left-4 right-4 rounded-xl border border-[#dfe3ff] bg-white/40 p-2"
               initial={{ opacity: 0, y: 10 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
@@ -725,9 +735,9 @@ function ResumeDocumentFlow() {
 
             {index < documentPreviewCards.length - 1 ? (
               <motion.div
-                className="absolute right-3 top-1/2 hidden h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-[#dfe3ff] bg-white/60 text-[#5661d8] shadow-sm backdrop-blur-xl sm:flex"
-                animate={{ x: [0, 4, 0] }}
-                transition={{ duration: 1.45, repeat: Infinity, ease: "easeInOut" }}
+                className="absolute right-3 top-1/2 hidden h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-[#dfe3ff] bg-white/60 text-[#5661d8] shadow-sm sm:flex"
+                animate={!reduceMotion && flowInView ? { x: [0, 4, 0] } : { x: 0 }}
+                transition={!reduceMotion && flowInView ? { duration: 1.45, repeat: Infinity, ease: "easeInOut" } : { duration: 0.2 }}
               >
                 <ArrowRight size={15} />
               </motion.div>
@@ -770,7 +780,7 @@ function RadarConsole({
             <MiniStat label="Companies indexed" value={`${stats.companies}+`} />
             <MiniStat label="Sponsor-aware roles" value={`${stats.sponsorAware}+`} />
           </div>
-          <p className="mt-3 text-xs font-medium text-[#687180]">
+          <p className="mt-3 text-xs font-medium text-[#465166]">
             Coverage varies by source availability and refresh timing.
           </p>
         </div>
@@ -778,7 +788,7 @@ function RadarConsole({
 
       <div className="grid gap-0 lg:grid-cols-[280px_1fr_310px]">
         <div className="border-b border-[#dfe3ff] p-4 sm:p-5 lg:border-b-0 lg:border-r">
-          <p className="px-2 text-xs font-semibold uppercase tracking-[0.16em] text-[#8a93a4]">Search lane</p>
+          <p className="px-2 text-xs font-semibold uppercase tracking-[0.16em] text-[#596579]">Search lane</p>
           <div className="mt-3 space-y-2">
             {roleFilters.map((role) => (
               <button
@@ -793,7 +803,7 @@ function RadarConsole({
                 )}
               >
                 <span className="block text-sm font-semibold">{role.label}</span>
-                <span className={cn("mt-1 block text-xs", activeRoleId === role.id ? "text-[#687180]" : "text-[#6b7280]")}>
+                <span className={cn("mt-1 block text-xs", activeRoleId === role.id ? "text-[#465166]" : "text-[#4b5563]")}>
                   {role.eyebrow}
                 </span>
               </button>
@@ -805,7 +815,7 @@ function RadarConsole({
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div>
               <p className="text-sm font-semibold text-[#10141d]">{activeRole.label} matches</p>
-              <p className="mt-1 text-xs text-[#6b7280]">Ranked by role evidence, student fit, sponsorship, and freshness.</p>
+              <p className="mt-1 text-xs font-medium text-[#4b5563]">Ranked by role evidence, student fit, sponsorship, and freshness.</p>
             </div>
             <span className={cn("rounded-full px-3 py-1 text-xs font-semibold", activeRole.chip)}>
               {featuredJobs.length} surfaced
@@ -818,10 +828,10 @@ function RadarConsole({
                 initial={{ opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: index * 0.05 }}
-                className="grid gap-4 rounded-[24px] border border-white/60 bg-white/30 p-4 shadow-[0_18px_56px_rgba(86,97,216,0.11)] backdrop-blur-xl sm:grid-cols-[1fr_auto] sm:items-center"
+                className="grid gap-4 rounded-[24px] border border-white/60 bg-white/30 p-4 shadow-[0_18px_56px_rgba(86,97,216,0.11)] sm:grid-cols-[1fr_auto] sm:items-center"
               >
                 <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2 text-xs font-medium text-[#7b8495]">
+                  <div className="flex flex-wrap items-center gap-2 text-xs font-medium text-[#505b70]">
                     <span className="text-[#4b5563]">{job.company}</span>
                     <span>/</span>
                     <span>{job.workType}</span>
@@ -831,7 +841,7 @@ function RadarConsole({
                   <p className="mt-1 line-clamp-2 text-base font-semibold leading-6 text-[#10141d]">{job.title}</p>
                   <div className="mt-3 flex flex-wrap gap-2">
                     {job.skills.slice(0, 3).map((skill) => (
-                      <span key={skill} className="rounded-full bg-white/50 px-2.5 py-1 text-xs font-medium text-[#5d6677] shadow-sm backdrop-blur-xl">
+                      <span key={skill} className="rounded-full bg-white/50 px-2.5 py-1 text-xs font-medium text-[#414b5d] shadow-sm">
                         {skill}
                       </span>
                     ))}
@@ -843,7 +853,7 @@ function RadarConsole({
                   </span>
                   <Link
                     href={`/jobs/${job.id}`}
-                    className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/60 bg-white/50 text-[#10141d] shadow-sm backdrop-blur-xl transition hover:-translate-y-0.5 hover:text-[#5661d8]"
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/60 bg-white/50 text-[#10141d] shadow-sm transition hover:-translate-y-0.5 hover:text-[#5661d8]"
                     aria-label={`Open ${job.title}`}
                   >
                     <ArrowRight size={15} />
@@ -865,12 +875,12 @@ function RadarConsole({
               <SignalBar label="Degree alignment" value={84} color="bg-[#34d399]" />
               <SignalBar label="Application readiness" value={78} color="bg-[#fb923c]" />
             </div>
-            <div className="mt-6 rounded-3xl border border-[#dfe3ff] bg-white/40 p-4 shadow-sm backdrop-blur-xl">
+            <div className="mt-6 rounded-3xl border border-[#dfe3ff] bg-white/40 p-4 shadow-sm">
               <p className="flex items-center gap-2 text-sm font-medium">
                 <CheckCircle2 size={16} className="text-[#34d399]" />
                 Resume-backed edit path
               </p>
-              <p className="mt-2 text-sm leading-6 text-[#687180]">
+              <p className="mt-2 text-sm font-medium leading-6 text-[#465166]">
                 Replace weak bullets first, add only when layout slack exists, and keep dates, headings, and contact details locked.
               </p>
             </div>
@@ -884,9 +894,9 @@ function RadarConsole({
 
 function MiniStat({ label, value }: Readonly<{ label: string; value: number | string }>) {
   return (
-    <div className="rounded-3xl border border-white/60 bg-white/30 p-4 shadow-[0_16px_46px_rgba(86,97,216,0.10)] backdrop-blur-xl">
+    <div className="rounded-3xl border border-white/60 bg-white/30 p-4 shadow-[0_16px_46px_rgba(86,97,216,0.10)]">
       <p className="text-2xl font-semibold text-[#10141d]">{value}</p>
-      <p className="mt-1 text-xs font-medium text-[#6b7280]">{label}</p>
+      <p className="mt-1 text-xs font-medium text-[#4b5563]">{label}</p>
     </div>
   );
 }
@@ -902,7 +912,7 @@ function SignalBar({
 }>) {
   return (
     <div>
-      <div className="mb-2 flex items-center justify-between text-xs font-medium text-[#687180]">
+      <div className="mb-2 flex items-center justify-between text-xs font-medium text-[#465166]">
         <span>{label}</span>
         <span>{value}%</span>
       </div>

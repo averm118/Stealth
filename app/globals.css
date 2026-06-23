@@ -67,6 +67,46 @@ body {
   transform: translateZ(0);
 }
 
+@keyframes landing-marquee-forward {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+
+  to {
+    transform: translate3d(-50%, 0, 0);
+  }
+}
+
+@keyframes landing-marquee-reverse {
+  from {
+    transform: translate3d(-50%, 0, 0);
+  }
+
+  to {
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+.landing-marquee-track {
+  animation-name: landing-marquee-forward;
+  animation-duration: 40s;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+.landing-marquee-track-reverse {
+  animation-name: landing-marquee-reverse;
+}
+
+.landing-marquee-track:not([data-paused="true"]) {
+  will-change: transform;
+}
+
+.landing-marquee-track[data-paused="true"] {
+  animation-play-state: paused;
+  will-change: auto;
+}
+
 .text-balance {
   text-wrap: balance;
 }

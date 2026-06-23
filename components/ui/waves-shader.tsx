@@ -4,9 +4,26 @@ import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { cn } from "@/lib/utils";
 
-export function ShaderComponent({ className }: Readonly<{ className?: string }>) {
+type ShaderSizing = "viewport" | "element";
+
+type ShaderComponentProps = {
+  className?: string;
+  sizing?: ShaderSizing;
+  pixelRatioCap?: number;
+  pauseWhenOffscreen?: boolean;
+  intersectionMargin?: string;
+};
+
+export function ShaderComponent({
+  className,
+  sizing = "element",
+  pixelRatioCap = 1.25,
+  pauseWhenOffscreen = false,
+  intersectionMargin = "240px"
+}: Readonly<ShaderComponentProps>) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [webglFailed, setWebglFailed] = useState(false);
+  const [reducedMotion, setReducedMotion] = useState(false);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -15,11 +32,19 @@ export function ShaderComponent({ className }: Readonly<{ className?: string }>)
     let scene: THREE.Scene;
     let renderer: THREE.WebGLRenderer;
     let animationFrame = 0;
+    let resizeFrame = 0;
     let uniforms: { [key: string]: THREE.IUniform };
+    let resizeObserver: ResizeObserver | undefined;
+    let intersectionObserver: IntersectionObserver | undefined;
+    let isIntersecting = !pauseWhenOffscreen;
+    let isDocumentVisible = !document.hidden;
+    let elapsedTime = 0;
+    let lastFrameTime: number | undefined;
     const container = containerRef.current;
+    const motionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const prefersReducedMotion = motionQuery.matches;
 
     const init = () => {
-      const startTime = performance.now();
       camera = new THREE.Camera();
       camera.position.z = 1;
 
@@ -107,38 +132,121 @@ export function ShaderComponent({ className }: Readonly<{ className?: string }>)
       const mesh = new THREE.Mesh(geometry, material);
       scene.add(mesh);
 
-      renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "low-power" });
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.6));
+      renderer = new THREE.WebGLRenderer({
+        antialias: false,
+        alpha: false,
+        depth: false,
+        stencil: false,
+        powerPreference: "high-performance"
+      });
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, pixelRatioCap));
       renderer.domElement.style.position = "absolute";
       renderer.domElement.style.inset = "0";
       renderer.domElement.style.display = "block";
       renderer.domElement.style.width = "100%";
       renderer.domElement.style.height = "100%";
       renderer.domElement.style.zIndex = "0";
+      renderer.domElement.dataset.shaderCanvas = sizing;
       container.appendChild(renderer.domElement);
 
-      const onWindowResize = () => {
-        const width = container.clientWidth || window.innerWidth;
-        const height = container.clientHeight || window.innerHeight;
-        renderer.setSize(width, height, false);
-        uniforms.u_resolution.value.x = renderer.domElement.width;
-        uniforms.u_resolution.value.y = renderer.domElement.height;
+      const getRenderSize = () => {
+        if (sizing === "viewport") {
+          return {
+            width: Math.max(1, Math.round(window.visualViewport?.width ?? window.innerWidth)),
+            height: Math.max(1, Math.round(window.visualViewport?.height ?? window.innerHeight))
+          };
+        }
+
+        const bounds = container.getBoundingClientRect();
+        return {
+          width: Math.max(1, Math.round(bounds.width || container.clientWidth)),
+          height: Math.max(1, Math.round(bounds.height || container.clientHeight))
+        };
       };
 
-      window.addEventListener("resize", onWindowResize);
-      onWindowResize();
+      const resizeRenderer = () => {
+        resizeFrame = 0;
+        const { width, height } = getRenderSize();
+        renderer.setSize(width, height, false);
+        renderer.getDrawingBufferSize(uniforms.u_resolution.value);
+        container.dataset.shaderSize = `${width}x${height}`;
+      };
 
-      const animate = () => {
-        uniforms.u_time.value = (performance.now() - startTime) / 1000;
+      const scheduleResize = () => {
+        if (resizeFrame) return;
+        resizeFrame = requestAnimationFrame(resizeRenderer);
+      };
+
+      const animate = (now: number) => {
+        if (lastFrameTime !== undefined) {
+          elapsedTime += (now - lastFrameTime) / 1000;
+        }
+        lastFrameTime = now;
+        uniforms.u_time.value = elapsedTime;
         renderer.render(scene, camera);
         animationFrame = requestAnimationFrame(animate);
       };
 
-      animate();
+      const shouldAnimate = () =>
+        !prefersReducedMotion &&
+        isDocumentVisible &&
+        (!pauseWhenOffscreen || isIntersecting);
+
+      const stopAnimation = () => {
+        if (animationFrame) {
+          cancelAnimationFrame(animationFrame);
+          animationFrame = 0;
+        }
+        lastFrameTime = undefined;
+        container.dataset.shaderActive = "false";
+      };
+
+      const updateAnimation = () => {
+        if (shouldAnimate()) {
+          if (!animationFrame) {
+            container.dataset.shaderActive = "true";
+            animationFrame = requestAnimationFrame(animate);
+          }
+          return;
+        }
+        stopAnimation();
+      };
+
+      const onVisibilityChange = () => {
+        isDocumentVisible = !document.hidden;
+        updateAnimation();
+      };
+
+      window.addEventListener("resize", scheduleResize);
+      window.visualViewport?.addEventListener("resize", scheduleResize);
+      document.addEventListener("visibilitychange", onVisibilityChange);
+
+      resizeObserver = new ResizeObserver(scheduleResize);
+      resizeObserver.observe(container);
+
+      if (pauseWhenOffscreen) {
+        intersectionObserver = new IntersectionObserver(
+          ([entry]) => {
+            isIntersecting = entry.isIntersecting;
+            updateAnimation();
+          },
+          { rootMargin: intersectionMargin }
+        );
+        intersectionObserver.observe(container);
+      }
+
+      resizeRenderer();
+      renderer.render(scene, camera);
+      updateAnimation();
 
       return () => {
-        window.removeEventListener("resize", onWindowResize);
-        cancelAnimationFrame(animationFrame);
+        window.removeEventListener("resize", scheduleResize);
+        window.visualViewport?.removeEventListener("resize", scheduleResize);
+        document.removeEventListener("visibilitychange", onVisibilityChange);
+        resizeObserver?.disconnect();
+        intersectionObserver?.disconnect();
+        stopAnimation();
+        if (resizeFrame) cancelAnimationFrame(resizeFrame);
         geometry.dispose();
         material.dispose();
         renderer.dispose();
@@ -147,6 +255,7 @@ export function ShaderComponent({ className }: Readonly<{ className?: string }>)
     };
 
     try {
+      setReducedMotion(prefersReducedMotion);
       setWebglFailed(false);
       return init();
     } catch (error) {
@@ -154,15 +263,20 @@ export function ShaderComponent({ className }: Readonly<{ className?: string }>)
       setWebglFailed(true);
       return undefined;
     }
-  }, []);
+  }, [intersectionMargin, pauseWhenOffscreen, pixelRatioCap, sizing]);
 
   return (
-    <div ref={containerRef} className={cn("relative h-screen w-full overflow-hidden", className)}>
+    <div
+      ref={containerRef}
+      data-shader-sizing={sizing}
+      className={cn("relative w-full overflow-hidden [contain:strict]", sizing === "viewport" ? "h-[100dvh]" : "h-full", className)}
+      style={sizing === "viewport" ? { width: "100vw", height: "100dvh" } : undefined}
+    >
       <div
         data-waves-fallback
         className={cn(
           "pointer-events-none absolute inset-0 z-10 bg-[conic-gradient(from_225deg_at_52%_48%,rgba(18,24,50,0.34),rgba(118,104,255,0.34),rgba(20,184,166,0.22),rgba(255,145,77,0.22),rgba(18,24,50,0.34)),linear-gradient(115deg,rgba(18,24,50,0.30),rgba(255,255,255,0.55)_24%,rgba(86,97,216,0.22)_48%,rgba(255,255,255,0.62)_72%,rgba(255,107,74,0.16)),repeating-linear-gradient(135deg,rgba(86,97,216,0.13)_0px,rgba(86,97,216,0.13)_1px,transparent_1px,transparent_18px)] mix-blend-multiply",
-          webglFailed ? "opacity-100" : "opacity-80"
+          webglFailed || reducedMotion ? "opacity-100" : "opacity-80"
         )}
       />
     </div>

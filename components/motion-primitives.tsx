@@ -8,7 +8,7 @@ export function PageTransition({ children }: Readonly<{ children: ReactNode }>) 
   return (
     <motion.div
       initial={false}
-      animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+      animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
     >
       {children}
@@ -25,7 +25,7 @@ export function Reveal({
     <motion.div
       className={className}
       initial={false}
-      whileInView={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+      whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, margin: "-80px" }}
       transition={{ duration: 0.72, delay, ease: [0.22, 1, 0.36, 1] }}
     >
@@ -60,8 +60,8 @@ export function StaggerItem({ children, className }: Readonly<{ children: ReactN
       className={className}
       initial={false}
       variants={{
-        hidden: { opacity: 0, y: 18, filter: "blur(10px)" },
-        show: { opacity: 1, y: 0, filter: "blur(0px)", transition: { duration: 0.58, ease: [0.22, 1, 0.36, 1] } }
+        hidden: { opacity: 0, y: 18 },
+        show: { opacity: 1, y: 0, transition: { duration: 0.58, ease: [0.22, 1, 0.36, 1] } }
       }}
     >
       {children}

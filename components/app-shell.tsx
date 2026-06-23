@@ -29,7 +29,7 @@ export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
 
   return (
     <div className="min-h-screen">
-      <FloatingOrbs />
+      {!isLandingPage ? <FloatingOrbs /> : null}
       <div className="pointer-events-none fixed inset-x-0 top-0 -z-10 h-[620px] terminal-grid opacity-80" />
       <motion.header
         className={cn(
@@ -59,7 +59,9 @@ export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
             </motion.span>
             <span>
               <span className="block text-sm font-semibold tracking-[0.24em] text-[#171b24]">STEALTH</span>
-              <span className="block text-xs text-[#7a828f]">AI Internship Radar</span>
+              <span className={cn("block text-xs", isLandingPage ? "font-medium text-[#4f596b]" : "text-[#7a828f]")}>
+                AI Internship Radar
+              </span>
             </span>
           </Link>
           <nav className="hidden items-center gap-1 rounded-full border border-black/[0.06] bg-white/66 p-1 shadow-sm backdrop-blur-xl md:flex">
@@ -71,7 +73,8 @@ export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
                   key={item.href}
                   href={item.href}
                   className={cn(
-                    "relative flex items-center gap-2 rounded-full px-4 py-2 text-sm text-[#737b88] transition hover:text-[#171b24]",
+                    "relative flex items-center gap-2 rounded-full px-4 py-2 text-sm transition hover:text-[#171b24]",
+                    isLandingPage ? "font-medium text-[#4f596b]" : "text-[#737b88]",
                     active && "text-[#171b24]"
                   )}
                 >

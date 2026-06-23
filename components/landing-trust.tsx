@@ -2,7 +2,8 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { motion, useReducedMotion } from "framer-motion";
+import { motion, useInView, useReducedMotion } from "framer-motion";
+import { useRef } from "react";
 import {
   ArrowRight,
   BadgeCheck,
@@ -100,6 +101,8 @@ const integrityChecks = [
 
 export function LandingCommunityTrust() {
   const reduceMotion = useReducedMotion();
+  const marqueeRef = useRef<HTMLDivElement>(null);
+  const marqueeInView = useInView(marqueeRef, { margin: "240px 0px" });
   const showCommunityPreview = landingTrustProof.status === "verified" || process.env.NODE_ENV !== "production";
 
   if (!showCommunityPreview) {
@@ -132,11 +135,14 @@ export function LandingCommunityTrust() {
       </div>
 
       <div className="border-t border-white/40 py-4">
-        <div className={reduceMotion ? "overflow-x-auto px-5 thin-scrollbar" : "overflow-hidden"}>
-          <motion.div
-            className="flex w-max"
-            animate={reduceMotion ? undefined : { x: ["0%", "-50%"] }}
-            transition={reduceMotion ? undefined : { duration: 28, repeat: Infinity, ease: "linear" }}
+        <div
+          ref={marqueeRef}
+          className={reduceMotion ? "overflow-x-auto px-5 thin-scrollbar" : "overflow-hidden [contain:paint]"}
+        >
+          <div
+            className={reduceMotion ? "flex w-max" : "landing-marquee-track flex w-max"}
+            data-paused={!marqueeInView}
+            style={reduceMotion ? undefined : { animationDuration: "28s", animationPlayState: marqueeInView ? "running" : "paused" }}
           >
             {universitySets.map((universities, setIndex) => (
               <div
@@ -147,7 +153,7 @@ export function LandingCommunityTrust() {
                 {universities.map((university) => (
                   <div
                     key={`${setIndex}-${university.name}`}
-                    className="flex h-16 min-w-[210px] items-center justify-center rounded-2xl border border-white/60 bg-white/40 px-5 shadow-sm backdrop-blur-xl"
+                    className="flex h-16 min-w-[210px] items-center justify-center rounded-2xl border border-white/60 bg-white/40 px-5 shadow-sm"
                   >
                     <Image
                       src={university.logo}
@@ -161,11 +167,11 @@ export function LandingCommunityTrust() {
                 ))}
               </div>
             ))}
-          </motion.div>
+          </div>
         </div>
       </div>
 
-      <div className="border-t border-white/40 px-5 py-3 text-xs font-medium text-[#687180] sm:px-7">
+      <div className="border-t border-white/40 px-5 py-3 text-xs font-medium text-[#465166] sm:px-7">
         not affiliated with any of these universities
       </div>
     </div>
@@ -195,7 +201,7 @@ export function ResumeIntegrityPanel() {
         </Link>
       </div>
 
-      <div className="grid gap-4 rounded-[30px] border border-white/60 bg-white/30 p-4 shadow-[0_24px_80px_rgba(20,28,58,0.12)] backdrop-blur-xl sm:p-5 md:grid-cols-[0.76fr_1.24fr]">
+      <div className="grid gap-4 rounded-[30px] border border-white/60 bg-white/30 p-4 shadow-[0_24px_80px_rgba(20,28,58,0.12)] sm:p-5 md:grid-cols-[0.76fr_1.24fr]">
         <IntegrityDocument />
 
         <div className="space-y-3">
@@ -218,7 +224,7 @@ export function ResumeIntegrityPanel() {
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
                 transition={{ delay: index * 0.08, duration: 0.42 }}
-                className="relative overflow-hidden rounded-2xl border border-white/60 bg-white/40 p-4 backdrop-blur-xl"
+                className="relative overflow-hidden rounded-2xl border border-white/60 bg-white/40 p-4"
               >
                 <div className="flex items-start gap-3">
                   <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/50 shadow-sm ring-1 ring-[#dfe3ff] ${check.tone}`}>
@@ -231,7 +237,7 @@ export function ResumeIntegrityPanel() {
                         {check.status}
                       </span>
                     </div>
-                    <p className="mt-1 text-xs leading-5 text-[#687180]">{check.copy}</p>
+                    <p className="mt-1 text-xs leading-5 text-[#465166]">{check.copy}</p>
                   </div>
                 </div>
                 <motion.div
@@ -264,17 +270,17 @@ function ProductSafeguardStrip() {
             The original resume stays in control.
           </h2>
         </div>
-        <span className="text-xs font-medium text-[#687180]">Product safeguards, not marketing claims</span>
+        <span className="text-xs font-medium text-[#465166]">Product safeguards, not marketing claims</span>
       </div>
 
       <div className="grid gap-3 md:grid-cols-3">
         {productSafeguards.map((item) => {
           const Icon = item.icon;
           return (
-            <div key={item.title} className="rounded-2xl border border-white/60 bg-white/30 p-4 backdrop-blur-xl">
+            <div key={item.title} className="rounded-2xl border border-white/60 bg-white/30 p-4">
               <Icon size={18} className={item.tone} />
               <p className="mt-4 text-base font-semibold text-[#10141d]">{item.title}</p>
-              <p className="mt-1 text-sm leading-6 text-[#687180]">{item.copy}</p>
+              <p className="mt-1 text-sm leading-6 text-[#465166]">{item.copy}</p>
             </div>
           );
         })}
@@ -289,17 +295,17 @@ function TrustCounter({ value, label }: Readonly<{ value: string; label: string 
       initial={{ opacity: 0, y: 10 }}
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true }}
-      className="min-w-[128px] rounded-2xl border border-white/60 bg-white/30 p-4 shadow-sm backdrop-blur-xl"
+      className="min-w-[128px] rounded-2xl border border-white/60 bg-white/30 p-4 shadow-sm"
     >
       <p className="text-3xl font-semibold leading-none text-[#10141d]">{value}</p>
-      <p className="mt-2 text-xs font-semibold uppercase tracking-[0.12em] text-[#687180]">{label}</p>
+      <p className="mt-2 text-xs font-semibold uppercase tracking-[0.12em] text-[#465166]">{label}</p>
     </motion.div>
   );
 }
 
 function IntegrityDocument() {
   return (
-    <div className="relative min-h-[320px] overflow-hidden rounded-[24px] border border-white/60 bg-white/50 p-5 shadow-[0_20px_60px_rgba(20,28,58,0.10)] backdrop-blur-xl">
+    <div className="relative min-h-[320px] overflow-hidden rounded-[24px] border border-white/60 bg-white/50 p-5 shadow-[0_20px_60px_rgba(20,28,58,0.10)]">
       <div className="absolute inset-x-0 top-0 h-1 bg-[#5661d8]" />
       <div className="flex items-start justify-between gap-3">
         <div>
@@ -318,7 +324,7 @@ function IntegrityDocument() {
           { label: "Skills", widths: ["w-11/12", "w-8/12"] }
         ].map((section, sectionIndex) => (
           <div key={section.label}>
-            <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#8a93a4]">{section.label}</p>
+            <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#596579]">{section.label}</p>
             <div className="space-y-2">
               {section.widths.map((width, lineIndex) => (
                 <motion.div

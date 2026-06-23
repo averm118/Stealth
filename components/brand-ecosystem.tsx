@@ -1,7 +1,8 @@
 "use client";
 
 import Image from "next/image";
-import { motion, useReducedMotion } from "framer-motion";
+import { motion, useInView, useReducedMotion } from "framer-motion";
+import { useRef } from "react";
 import { BriefcaseBusiness, FileStack, Layers3 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -78,18 +79,18 @@ function LogoTile({
   return (
     <div
       className={cn(
-        "flex shrink-0 items-center border border-white/70 bg-white/45 shadow-[0_12px_36px_rgba(30,42,96,0.10)] backdrop-blur-xl ring-1 ring-[#dfe3ff]/35",
-        compact ? "h-14 w-[150px] gap-3 rounded-2xl px-3" : "h-[78px] w-[178px] flex-col justify-center gap-2 rounded-[22px] px-4"
+        "flex shrink-0 items-center justify-center border border-white/70 bg-white/45 text-center shadow-[0_12px_36px_rgba(30,42,96,0.10)] ring-1 ring-[#dfe3ff]/35",
+        compact ? "h-14 w-[150px] gap-3 rounded-2xl px-3" : "h-[78px] w-[178px] flex-col gap-2 rounded-[22px] px-4"
       )}
     >
-      <div className={cn("relative shrink-0", compact ? "h-7 w-9" : "h-8 w-28")}>
+      <div className={cn("relative grid shrink-0 place-items-center", compact ? "h-7 w-9" : showName ? "h-8 w-28" : "h-12 w-32")}>
         <Image
           src={mark.src}
           alt={mark.alt}
           fill
           unoptimized
           sizes={compact ? "36px" : "112px"}
-          className={cn("object-contain", mark.imageClassName)}
+          className={cn("object-contain object-center", showName && mark.imageClassName)}
         />
       </div>
       {showName ? (
@@ -105,7 +106,7 @@ function StaticLogoRow({ marks }: Readonly<{ marks: BrandMark[] }>) {
   return (
     <div className="flex gap-3 overflow-x-auto pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       {marks.map((mark) => (
-        <LogoTile key={mark.name} mark={mark} />
+        <LogoTile key={mark.name} mark={mark} showName={false} />
       ))}
     </div>
   );
@@ -114,38 +115,41 @@ function StaticLogoRow({ marks }: Readonly<{ marks: BrandMark[] }>) {
 function MovingLogoRow({
   marks,
   reverse = false,
-  duration
+  duration,
+  active
 }: Readonly<{
   marks: BrandMark[];
   reverse?: boolean;
   duration: number;
+  active: boolean;
 }>) {
   return (
-    <motion.div
-      className="flex w-max"
-      initial={{ x: reverse ? "-50%" : "0%" }}
-      animate={{ x: reverse ? ["-50%", "0%"] : ["0%", "-50%"] }}
-      transition={{ duration, ease: "linear", repeat: Infinity }}
+    <div
+      className={cn("landing-marquee-track flex w-max", reverse && "landing-marquee-track-reverse")}
+      data-paused={!active}
+      style={{ animationDuration: `${duration}s`, animationPlayState: active ? "running" : "paused" }}
     >
       {[0, 1].map((copy) => (
         <div key={copy} className="flex shrink-0 gap-3 pr-3" aria-hidden={copy === 1}>
           {marks.map((mark) => (
-            <LogoTile key={`${copy}-${mark.name}`} mark={mark} />
+            <LogoTile key={`${copy}-${mark.name}`} mark={mark} showName={false} />
           ))}
         </div>
       ))}
-    </motion.div>
+    </div>
   );
 }
 
 export function EmployerBrandWall() {
   const reduceMotion = useReducedMotion();
+  const marqueeRef = useRef<HTMLDivElement>(null);
+  const marqueeInView = useInView(marqueeRef, { margin: "240px 0px" });
   const firstRow = employers.slice(0, 11);
   const secondRow = employers.slice(11);
 
   return (
     <div className="overflow-hidden rounded-[36px] border border-white/65 bg-white/24 py-7 shadow-[0_34px_110px_rgba(30,42,96,0.16)] backdrop-blur-xl ring-1 ring-[#dfe3ff]/40 sm:py-9">
-      <div className="flex flex-col gap-4 px-5 sm:flex-row sm:items-end sm:justify-between sm:px-8">
+      <div className="px-5 sm:px-8">
         <div>
           <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-[#5661d8]">
             <BriefcaseBusiness size={16} />
@@ -155,10 +159,12 @@ export function EmployerBrandWall() {
             Roles across teams you already know.
           </h2>
         </div>
-        <p className="max-w-sm text-sm font-medium leading-6 text-[#4f5b6f]">22 represented employers across the current catalog.</p>
       </div>
 
-      <div className="mt-7 space-y-3 overflow-hidden px-3 [mask-image:linear-gradient(to_right,transparent,black_5%,black_95%,transparent)] sm:px-0">
+      <div
+        ref={marqueeRef}
+        className="mt-7 space-y-3 overflow-hidden px-3 [contain:paint] [mask-image:linear-gradient(to_right,transparent,black_5%,black_95%,transparent)] sm:px-0"
+      >
         {reduceMotion ? (
           <>
             <StaticLogoRow marks={firstRow} />
@@ -166,13 +172,13 @@ export function EmployerBrandWall() {
           </>
         ) : (
           <>
-            <MovingLogoRow marks={firstRow} duration={42} />
-            <MovingLogoRow marks={secondRow} reverse duration={46} />
+            <MovingLogoRow marks={firstRow} duration={42} active={marqueeInView} />
+            <MovingLogoRow marks={secondRow} reverse duration={46} active={marqueeInView} />
           </>
         )}
       </div>
 
-      <p className="mt-6 px-5 text-xs font-medium text-[#626d7e] sm:px-8">
+      <p className="mt-6 px-5 text-xs font-medium text-[#465166] sm:px-8">
         Company logos represent catalog coverage, not partnerships or endorsements.
       </p>
     </div>
@@ -188,7 +194,7 @@ export function JobSourceBanner() {
             <Layers3 size={16} className="text-[#0f766e]" />
             Public job source layer
           </p>
-          <p className="mt-1 text-xs font-medium text-[#687180]">No partnership implied</p>
+          <p className="mt-1 text-xs font-medium text-[#465166]">No partnership implied</p>
         </div>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           {jobSources.map((mark) => (
