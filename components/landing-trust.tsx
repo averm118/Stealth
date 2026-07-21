@@ -20,23 +20,13 @@ type UniversityProof = {
   logo: string;
 };
 
-type LandingTrustProof =
-  | {
-      status: "draft";
-      studentCount: string;
-      universityCount: string;
-      universities: UniversityProof[];
-    }
-  | {
-      status: "verified";
-      studentCount: string;
-      universityCount: string;
-      universities: UniversityProof[];
-      sourceNote: string;
-    };
+type LandingTrustProof = {
+  studentCount: string;
+  universityCount: string;
+  universities: UniversityProof[];
+};
 
 const landingTrustProof: LandingTrustProof = {
-  status: "draft",
   studentCount: "500+",
   universityCount: "40+",
   universities: [
@@ -50,27 +40,6 @@ const landingTrustProof: LandingTrustProof = {
     { name: "Georgia Institute of Technology", logo: "/university-logos/georgia-tech.svg" }
   ]
 };
-
-const productSafeguards = [
-  {
-    title: "Evidence-backed",
-    copy: "Every edit starts with your uploaded resume.",
-    icon: FileCheck2,
-    tone: "text-[#5661d8]"
-  },
-  {
-    title: "Unsupported claims blocked",
-    copy: "Missing tools and experience stay missing.",
-    icon: ShieldCheck,
-    tone: "text-[#0f766e]"
-  },
-  {
-    title: "Layout locked",
-    copy: "Dates, headings, and DOCX structure stay protected.",
-    icon: LockKeyhole,
-    tone: "text-[#7c3aed]"
-  }
-];
 
 const integrityChecks = [
   {
@@ -103,11 +72,6 @@ export function LandingCommunityTrust() {
   const reduceMotion = useReducedMotion();
   const marqueeRef = useRef<HTMLDivElement>(null);
   const marqueeInView = useInView(marqueeRef, { margin: "240px 0px" });
-  const showCommunityPreview = landingTrustProof.status === "verified" || process.env.NODE_ENV !== "production";
-
-  if (!showCommunityPreview) {
-    return <ProductSafeguardStrip />;
-  }
 
   const universitySets = reduceMotion
     ? [landingTrustProof.universities]
@@ -252,38 +216,6 @@ export function ResumeIntegrityPanel() {
             );
           })}
         </div>
-      </div>
-    </div>
-  );
-}
-
-function ProductSafeguardStrip() {
-  return (
-    <div className="overflow-hidden rounded-[32px] border border-white/60 bg-white/25 p-5 shadow-[0_28px_90px_rgba(86,97,216,0.14)] backdrop-blur-xl ring-1 ring-[#dfe3ff]/40 sm:p-7">
-      <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <p className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.16em] text-[#5661d8]">
-            <BadgeCheck size={17} />
-            Built for trust
-          </p>
-          <h2 className="mt-3 text-balance text-3xl font-semibold text-[#10141d] sm:text-4xl">
-            The original resume stays in control.
-          </h2>
-        </div>
-        <span className="text-xs font-medium text-[#465166]">Product safeguards, not marketing claims</span>
-      </div>
-
-      <div className="grid gap-3 md:grid-cols-3">
-        {productSafeguards.map((item) => {
-          const Icon = item.icon;
-          return (
-            <div key={item.title} className="rounded-2xl border border-white/60 bg-white/30 p-4">
-              <Icon size={18} className={item.tone} />
-              <p className="mt-4 text-base font-semibold text-[#10141d]">{item.title}</p>
-              <p className="mt-1 text-sm leading-6 text-[#465166]">{item.copy}</p>
-            </div>
-          );
-        })}
       </div>
     </div>
   );
