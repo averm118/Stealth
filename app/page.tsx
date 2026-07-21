@@ -23,6 +23,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Reveal, Stagger, StaggerItem } from "@/components/motion-primitives";
 import { LandingCommunityTrust, ResumeIntegrityPanel } from "@/components/landing-trust";
+import { WaitlistForm } from "@/components/waitlist-form";
 import {
   EmployerBrandWall,
   JobSourceBanner,
@@ -224,20 +225,7 @@ export default function LandingPage() {
           </Reveal>
 
           <Reveal delay={0.24}>
-            <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
-              <Button asChild size="lg" className="h-12 px-6">
-                <Link href="/dashboard">
-                  Open radar
-                  <ArrowRight size={18} />
-                </Link>
-              </Button>
-              <Button asChild size="lg" variant="secondary" className="h-12 px-6">
-                <Link href="/profile">
-                  Upload resume
-                  <FileText size={18} />
-                </Link>
-              </Button>
-            </div>
+            <WaitlistForm className="mt-8" />
           </Reveal>
         </div>
 
@@ -297,17 +285,11 @@ export default function LandingPage() {
                   Upload once. Rank better roles. Tailor without breaking your resume.
                 </p>
               </div>
-              <div className="flex flex-col gap-3 sm:flex-row">
+              <div>
                 <Button asChild size="lg" className="h-12 justify-center px-6">
-                  <Link href="/profile">
-                    Upload resume
+                  <Link href="#waitlist">
+                    Join the waitlist
                     <ArrowRight size={18} />
-                  </Link>
-                </Button>
-                <Button asChild size="lg" variant="secondary" className="h-12 justify-center px-6">
-                  <Link href="/dashboard">
-                    Browse radar
-                    <Radar size={18} />
                   </Link>
                 </Button>
               </div>
@@ -852,9 +834,9 @@ function RadarConsole({
                     Strong fit
                   </span>
                   <Link
-                    href={`/jobs/${job.id}`}
+                    href="#waitlist"
                     className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/60 bg-white/50 text-[#10141d] shadow-sm transition hover:-translate-y-0.5 hover:text-[#5661d8]"
-                    aria-label={`Open ${job.title}`}
+                    aria-label={`Join the waitlist to access ${job.title}`}
                   >
                     <ArrowRight size={15} />
                   </Link>

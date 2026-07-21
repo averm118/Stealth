@@ -35,7 +35,7 @@ export function AuthStatus() {
   async function signOut() {
     const supabase = createBrowserSupabaseClient();
     await supabase?.auth.signOut();
-    window.location.href = "/auth";
+    window.location.href = "/";
   }
 
   if (loading) {
@@ -45,11 +45,11 @@ export function AuthStatus() {
   if (!user) {
     return (
       <Link
-        href="/auth"
+        href="/owner"
         className="flex items-center gap-2 rounded-full bg-[#171b24] px-4 py-2.5 text-sm font-semibold text-white shadow-[0_18px_40px_rgba(20,25,34,0.16)] transition hover:-translate-y-0.5 hover:bg-[#262c37] sm:px-5 sm:py-3"
       >
         <UserRound size={16} />
-        Sign in
+        Owner sign in
       </Link>
     );
   }

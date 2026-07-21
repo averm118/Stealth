@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, type ReactNode } from "react";
 import { motion, useMotionValueEvent, useScroll } from "framer-motion";
-import { BarChart3, BookmarkCheck, Radar, Settings, UserRound } from "lucide-react";
+import { ArrowLeft, BarChart3, BookmarkCheck, Mail, Radar, Settings, UserRound } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { FloatingOrbs, PageTransition } from "@/components/motion-primitives";
 import { AuthStatus } from "@/components/auth-status";
@@ -19,6 +19,8 @@ const navItems = [
 export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
   const pathname = usePathname();
   const isLandingPage = pathname === "/";
+  const isOwnerPage = pathname === "/owner" || pathname === "/auth";
+  const showProductNavigation = !isLandingPage && !isOwnerPage;
   const { scrollY } = useScroll();
   const [isHeaderScrolled, setIsHeaderScrolled] = useState(false);
 
@@ -64,36 +66,57 @@ export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
               </span>
             </span>
           </Link>
-          <nav className="hidden items-center gap-1 rounded-full border border-black/[0.06] bg-white/66 p-1 shadow-sm backdrop-blur-xl md:flex">
-            {navItems.map((item) => {
-              const Icon = item.icon;
-              const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={cn(
-                    "relative flex items-center gap-2 rounded-full px-4 py-2 text-sm transition hover:text-[#171b24]",
-                    isLandingPage ? "font-medium text-[#4f596b]" : "text-[#737b88]",
-                    active && "text-[#171b24]"
-                  )}
-                >
-                  {active && (
-                    <motion.span
-                      layoutId="nav-pill"
-                      className="absolute inset-0 rounded-full bg-[#f1f3f8] shadow-sm"
-                      transition={{ type: "spring", stiffness: 420, damping: 34 }}
-                    />
-                  )}
-                  <span className="relative flex items-center gap-2">
-                  <Icon size={16} />
-                  {item.label}
-                  </span>
-                </Link>
-              );
-            })}
-          </nav>
-          <AuthStatus />
+          {showProductNavigation ? (
+            <nav className="hidden items-center gap-1 rounded-full border border-black/[0.06] bg-white/66 p-1 shadow-sm backdrop-blur-xl md:flex">
+              {navItems.map((item) => {
+                const Icon = item.icon;
+                const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={cn(
+                      "relative flex items-center gap-2 rounded-full px-4 py-2 text-sm text-[#737b88] transition hover:text-[#171b24]",
+                      active && "text-[#171b24]"
+                    )}
+                  >
+                    {active && (
+                      <motion.span
+                        layoutId="nav-pill"
+                        className="absolute inset-0 rounded-full bg-[#f1f3f8] shadow-sm"
+                        transition={{ type: "spring", stiffness: 420, damping: 34 }}
+                      />
+                    )}
+                    <span className="relative flex items-center gap-2">
+                      <Icon size={16} />
+                      {item.label}
+                    </span>
+                  </Link>
+                );
+              })}
+            </nav>
+          ) : null}
+          {isLandingPage ? (
+            <Link
+              href="/#waitlist"
+              aria-label="Join the waitlist"
+              className="flex h-11 w-11 items-center justify-center gap-2 rounded-full bg-[#171b24] text-sm font-semibold text-white shadow-[0_18px_40px_rgba(20,25,34,0.16)] transition hover:-translate-y-0.5 hover:bg-[#262c37] sm:h-auto sm:w-auto sm:px-5 sm:py-3"
+            >
+              <Mail size={16} />
+              <span className="hidden sm:inline">Join waitlist</span>
+            </Link>
+          ) : isOwnerPage ? (
+            <Link
+              href="/"
+              aria-label="Return to the landing page"
+              className="flex h-11 w-11 items-center justify-center gap-2 rounded-full border border-white/60 bg-white/45 text-sm font-semibold text-[#171b24] shadow-sm backdrop-blur-xl transition hover:-translate-y-0.5 hover:bg-white/65 sm:h-auto sm:w-auto sm:px-5 sm:py-3"
+            >
+              <ArrowLeft size={16} />
+              <span className="hidden sm:inline">Landing page</span>
+            </Link>
+          ) : (
+            <AuthStatus />
+          )}
         </div>
       </motion.header>
       <main
@@ -104,25 +127,27 @@ export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
       >
         <PageTransition key={pathname}>{children}</PageTransition>
       </main>
-      <nav className="fixed inset-x-3 bottom-3 z-50 grid grid-cols-4 gap-1 rounded-full border border-black/[0.06] bg-white/85 p-1 shadow-[0_18px_50px_rgba(20,25,34,0.12)] backdrop-blur-xl md:hidden">
-        {navItems.map((item) => {
-          const Icon = item.icon;
-          const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cn(
-                "flex flex-col items-center gap-1 rounded-full px-2 py-2 text-[11px] text-[#7a828f]",
-                active && "bg-[#f1f3f8] text-[#5661d8]"
-              )}
-            >
-              <Icon size={17} />
-              {item.label}
-            </Link>
-          );
-        })}
-      </nav>
+      {showProductNavigation ? (
+        <nav className="fixed inset-x-3 bottom-3 z-50 grid grid-cols-4 gap-1 rounded-full border border-black/[0.06] bg-white/85 p-1 shadow-[0_18px_50px_rgba(20,25,34,0.12)] backdrop-blur-xl md:hidden">
+          {navItems.map((item) => {
+            const Icon = item.icon;
+            const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={cn(
+                  "flex flex-col items-center gap-1 rounded-full px-2 py-2 text-[11px] text-[#7a828f]",
+                  active && "bg-[#f1f3f8] text-[#5661d8]"
+                )}
+              >
+                <Icon size={17} />
+                {item.label}
+              </Link>
+            );
+          })}
+        </nav>
+      ) : null}
     </div>
   );
 }

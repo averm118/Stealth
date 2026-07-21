@@ -43,6 +43,10 @@ NEXT_PUBLIC_APP_URL=http://localhost:3000
 NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
 SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
+STEALTH_ADMIN_EMAILS=owner@example.com
+RESEND_API_KEY=your_resend_api_key
+WAITLIST_FROM_EMAIL="Stealth <waitlist@your-verified-domain.com>"
+WAITLIST_REPLY_TO=hello@your-domain.com
 CRON_SECRET=your_vercel_cron_secret
 INGEST_ADMIN_TOKEN=your_optional_manual_ingest_token
 SCRAPER_USER_AGENT=StealthJobRadar/1.0
@@ -61,6 +65,14 @@ npm run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000).
+
+## Waitlist Launch
+
+The public site is waitlist-only. Apply the Supabase migrations, then configure a verified Resend sender and list every owner email in `STEALTH_ADMIN_EMAILS` as a comma-separated value.
+
+Create the owner account in Supabase Auth before disabling hosted email signups. Local Supabase signups are disabled in `supabase/config.toml`; for the hosted project, also turn off **Authentication > Providers > Email > Allow new users to sign up** in the Supabase dashboard.
+
+Owners sign in through the intentionally unlinked `/owner` route. Every other authenticated account is denied product and user-facing API access. Waitlist entries are managed directly in the private `waitlist_entries` table in Supabase.
 
 Refresh the public job ingestion cache and Supabase jobs table manually in development:
 

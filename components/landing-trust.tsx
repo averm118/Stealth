@@ -193,10 +193,10 @@ export function ResumeIntegrityPanel() {
           Stealth improves the language around evidence you already have. It does not manufacture a new candidate.
         </p>
         <Link
-          href="/profile"
+          href="/#waitlist"
           className="mt-7 inline-flex h-11 items-center gap-2 rounded-full border border-white/60 bg-white/40 px-5 text-sm font-semibold text-[#10141d] shadow-sm backdrop-blur-xl transition hover:-translate-y-0.5 hover:bg-white/60"
         >
-          Check my resume
+          Join the waitlist
           <ArrowRight size={16} />
         </Link>
       </div>
