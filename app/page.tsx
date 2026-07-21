@@ -214,7 +214,7 @@ export default function LandingPage() {
 
           <Reveal delay={0.08}>
             <h1 className="mx-auto mt-7 max-w-[18rem] text-balance text-5xl font-semibold leading-[1.02] text-[#10141d] sm:max-w-5xl sm:text-7xl sm:leading-none lg:text-8xl">
-              Apply with a resume that already fits.
+              Apply with a resume that is uniquely yours.
             </h1>
           </Reveal>
 
