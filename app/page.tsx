@@ -219,7 +219,7 @@ export default function LandingPage() {
           </Reveal>
 
           <Reveal delay={0.16}>
-            <p className="mx-auto mt-6 max-w-[18rem] text-base leading-7 text-[#384253] sm:max-w-2xl sm:text-xl sm:leading-8">
+            <p className="mx-auto mt-6 max-w-[18rem] text-base leading-7 text-[#e7eaff] [text-shadow:0_1px_14px_rgba(20,26,55,0.55)] sm:max-w-2xl sm:text-xl sm:leading-8">
               Stealth turns your real resume into ranked internships, sharper bullets, and matched cover letters without generic AI templates.
             </p>
           </Reveal>
