@@ -1,12 +1,15 @@
 import { DOMParser, XMLSerializer } from "@xmldom/xmldom";
 import type { Document as XmldomDocument, Element as XmldomElement, Node as XmldomNode } from "@xmldom/xmldom";
 import JSZip from "jszip";
+import { selectCompleteReplacementCandidate } from "./resume-fit.ts";
 import type {
   ResumeBulletRewrite,
+  ResumeAppliedChange,
   ResumeDocxEditStats,
   ResumeDocxParagraphRole,
   ResumeEditOperation,
   ResumeEditOperationType,
+  ResumeFitSkillPruneCandidate,
   ResumeLayoutAdjustment,
   ResumeLayoutMap,
   ResumeLayoutMapParagraph,
@@ -23,6 +26,8 @@ type TailoredDocxInput =
       editOperations?: ResumeEditOperation[];
       rewrites?: ResumeBulletRewrite[];
       layoutAdjustment?: ResumeLayoutAdjustment;
+      approvedRemovalParagraphIds?: string[];
+      approvedSkillPrunes?: ResumeFitSkillPruneCandidate[];
     };
 
 type NormalizedOperation = ResumeEditOperation & {
@@ -53,11 +58,15 @@ type ResolvedOperationTarget = {
 type FittedReplacement = {
   text: string;
   shortened: boolean;
+  candidateIndex: number;
+  failureCategory?: "protected_content" | "replacement_did_not_fit";
 };
 
 type NormalizedDocxInput = {
   operations: NormalizedOperation[];
   layoutAdjustment: ResumeLayoutAdjustment;
+  approvedRemovalParagraphIds: string[];
+  approvedSkillPrunes: ResumeFitSkillPruneCandidate[];
 };
 
 type LayoutSnapshot = {
@@ -80,7 +89,12 @@ type ApplyDocxEditOptions = {
 export type TailoredDocxBuildResult = {
   buffer: Uint8Array;
   stats: ResumeDocxEditStats;
+  appliedChanges: ResumeAppliedChange[];
   skippedChanges: ResumeSkippedChange[];
+  removedParagraphIds: string[];
+  prunedSkills: ResumeFitSkillPruneCandidate[];
+  bodyFontScale: number;
+  scaledParagraphIds: string[];
 };
 
 const wordNamespace = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
@@ -91,7 +105,8 @@ const sectionHeadingPattern = /^[A-Z][A-Z0-9/&+\-\s]{2,70}$/;
 const terminalSectionPattern =
   /\b(PROJECTS?|CERTIFICATIONS?|PUBLICATIONS?|ACTIVITIES?|LEADERSHIP|INVOLVEMENT|AWARDS?|ORGANIZATIONS?|VOLUNTEER|ADDITIONAL)\b/i;
 const maxDocxLayoutLockedOperations = 14;
-const maxDocxLayoutLockedInsertions = 2;
+const maxFitRemovals = 4;
+const maxFitRemovalsPerSection = 2;
 
 export async function createResumeLayoutMapFromDocx(originalDocx: Buffer | ArrayBuffer | Uint8Array) {
   const zip = await JSZip.loadAsync(originalDocx);
@@ -101,11 +116,16 @@ export async function createResumeLayoutMapFromDocx(originalDocx: Buffer | Array
   const document = parseXml(await documentFile.async("string"), "word/document.xml");
   const nodes = buildParagraphNodes(document);
   const sectionNames = Array.from(new Set(nodes.map((node) => node.sectionName).filter(Boolean) as string[]));
+  const stylesFile = zip.file("word/styles.xml");
+  const stylesDocument = stylesFile ? parseXml(await stylesFile.async("string"), "word/styles.xml") : null;
 
   return {
     source: "docx",
     paragraphs: nodes.map(toLayoutParagraph),
     sectionNames,
+    page: extractDocxPageGeometry(document),
+    defaultFont: stylesDocument ? extractDocxDefaultFont(stylesDocument) : undefined,
+    defaultFontSizePt: stylesDocument ? extractDocxDefaultFontSize(stylesDocument) : undefined,
     generatedAt: new Date().toISOString()
   } satisfies ResumeLayoutMap;
 }
@@ -120,6 +140,28 @@ export async function createTailoredDocxBuildResultFromOriginal(
   input: TailoredDocxInput
 ) {
   const tailoringInput = normalizeDocxInput(input);
+  if (
+    !tailoringInput.operations.length &&
+    !tailoringInput.approvedRemovalParagraphIds.length &&
+    !tailoringInput.approvedSkillPrunes.length &&
+    tailoringInput.layoutAdjustment.fontScale >= 1
+  ) {
+    const buffer = toUint8Array(originalDocx);
+    await validateDocxBuffer(buffer, { extractText: true });
+    return {
+      buffer,
+      stats: {
+        ...createDocxStats(),
+        validationStatus: "valid"
+      },
+      appliedChanges: [],
+      skippedChanges: [],
+      removedParagraphIds: [],
+      prunedSkills: [],
+      bodyFontScale: 1,
+      scaledParagraphIds: []
+    } satisfies TailoredDocxBuildResult;
+  }
 
   try {
     return await buildTailoredDocxAttempt(originalDocx, tailoringInput, { inPlaceOnly: false });
@@ -151,7 +193,15 @@ async function buildTailoredDocxAttempt(
   if (!documentFile) throw new Error("DOCX is missing word/document.xml.");
 
   const document = parseXml(await documentFile.async("string"), "word/document.xml");
+  const originalStructureDocument = document.cloneNode(true) as Document;
   const nodes = buildParagraphNodes(document);
+  const stylesFile = zip.file("word/styles.xml");
+  const stylesDocument = stylesFile
+    ? parseXml(await stylesFile.async("string"), "word/styles.xml")
+    : null;
+  const defaultFontSizePt = stylesDocument
+    ? extractDocxDefaultFontSize(stylesDocument) ?? 10
+    : 10;
   const originalSnapshot = createLayoutSnapshot(nodes);
   const layoutLockedOperations = prepareLayoutLockedDocxOperations(tailoringInput.operations, nodes, options);
   const layoutPressure = estimateDocxLayoutPressure(nodes, layoutLockedOperations, tailoringInput.layoutAdjustment);
@@ -159,20 +209,34 @@ async function buildTailoredDocxAttempt(
     layoutPressure,
     inPlaceOnly: options.inPlaceOnly
   });
-
-  scaleFontSizesInDocument(document, tailoringInput.layoutAdjustment.fontScale);
+  const skillPruneResult = applyApprovedSkillPrunes(
+    nodes,
+    tailoringInput.approvedSkillPrunes
+  );
+  const removalResult = applyApprovedParagraphRemovals(
+    nodes,
+    tailoringInput.approvedRemovalParagraphIds,
+    operationResult.acceptedImprovementSections
+  );
+  const scaledParagraphIds = applyEligibleBodyFontScale(
+    nodes,
+    tailoringInput.layoutAdjustment.fontScale,
+    defaultFontSizePt
+  );
 
   const editedSnapshot = createLayoutSnapshot(buildParagraphNodes(document));
-  validateLayoutPreservation(originalSnapshot, editedSnapshot);
+  validateLayoutPreservation(originalSnapshot, editedSnapshot, removalResult.removedParagraphIds.length);
+  validateDocumentStructureSignature(
+    createDocumentStructureSignature(
+      originalStructureDocument,
+      removalResult.removedParagraphIds,
+      tailoringInput.layoutAdjustment.fontScale < 1
+    ),
+    document,
+    tailoringInput.layoutAdjustment.fontScale < 1
+  );
 
   zip.file("word/document.xml", serializeXml(document));
-
-  const stylesFile = zip.file("word/styles.xml");
-  if (stylesFile && tailoringInput.layoutAdjustment.fontScale < 0.995) {
-    const stylesDocument = parseXml(await stylesFile.async("string"), "word/styles.xml");
-    scaleFontSizesInDocument(stylesDocument, tailoringInput.layoutAdjustment.fontScale);
-    zip.file("word/styles.xml", serializeXml(stylesDocument));
-  }
 
   const buffer = await zip.generateAsync({
     type: "uint8array",
@@ -182,13 +246,32 @@ async function buildTailoredDocxAttempt(
 
   const stats: ResumeDocxEditStats = {
     ...operationResult.stats,
-    skippedEdits: operationResult.skippedChanges.length,
+    removedLines: removalResult.removedParagraphIds.length,
+    removedForFit: removalResult.removedParagraphIds.length,
+    removedParagraphIds: removalResult.removedParagraphIds,
+    skillsPruned: skillPruneResult.prunedSkills.length,
+    prunedSkills: skillPruneResult.prunedSkills.map((item) => item.skill),
+    fontScaleApplied: tailoringInput.layoutAdjustment.fontScale,
+    skippedByReason: mergeCountRecords(
+      operationResult.stats.skippedByReason,
+      removalResult.skippedByReason,
+      skillPruneResult.skippedByReason
+    ),
+    skippedEdits:
+      operationResult.skippedChanges.length +
+      removalResult.skippedChanges.length +
+      skillPruneResult.skippedChanges.length,
     fontScale: tailoringInput.layoutAdjustment.fontScale,
     validationStatus: "not_generated"
   };
 
   try {
     await validateDocxBuffer(buffer, { extractText: true });
+    await validateExactDocxPackageFidelity(originalDocx, buffer, {
+      removedParagraphIds: removalResult.removedParagraphIds,
+      bodyFontScale: tailoringInput.layoutAdjustment.fontScale,
+      scaledParagraphIds
+    });
     stats.validationStatus = "valid";
   } catch (error) {
     stats.validationStatus = "failed";
@@ -202,7 +285,16 @@ async function buildTailoredDocxAttempt(
   return {
     buffer,
     stats,
-    skippedChanges: operationResult.skippedChanges
+    appliedChanges: operationResult.appliedChanges,
+    skippedChanges: [
+      ...operationResult.skippedChanges,
+      ...removalResult.skippedChanges,
+      ...skillPruneResult.skippedChanges
+    ],
+    removedParagraphIds: removalResult.removedParagraphIds,
+    prunedSkills: skillPruneResult.prunedSkills,
+    bodyFontScale: tailoringInput.layoutAdjustment.fontScale,
+    scaledParagraphIds
   } satisfies TailoredDocxBuildResult;
 }
 
@@ -242,7 +334,12 @@ async function buildOriginalDocxFallback(
   return {
     buffer,
     stats,
-    skippedChanges
+    appliedChanges: [],
+    skippedChanges,
+    removedParagraphIds: [],
+    prunedSkills: [],
+    bodyFontScale: 1,
+    scaledParagraphIds: []
   } satisfies TailoredDocxBuildResult;
 }
 
@@ -299,7 +396,20 @@ function normalizeDocxInput(input: TailoredDocxInput): NormalizedDocxInput {
         return (hasMappedTarget || hasFallbackText) && (allowsEmptyReplacement || operation.replacement.length > 0);
       })
       .slice(0, 36),
-    layoutAdjustment: normalizeLayoutAdjustment(Array.isArray(input) ? undefined : input.layoutAdjustment)
+    layoutAdjustment: normalizeLayoutAdjustment(Array.isArray(input) ? undefined : input.layoutAdjustment),
+    approvedSkillPrunes: Array.isArray(input)
+      ? []
+      : normalizeApprovedSkillPrunes(input.approvedSkillPrunes),
+    approvedRemovalParagraphIds: Array.isArray(input)
+      ? []
+      : Array.from(
+          new Set(
+            (input.approvedRemovalParagraphIds ?? [])
+              .filter((id): id is string => typeof id === "string")
+              .map((id) => id.trim())
+              .filter((id) => /^p\d{3,5}$/.test(id))
+          )
+        ).slice(0, maxFitRemovals)
   };
 }
 
@@ -314,11 +424,40 @@ function rewriteToOperation(rewrite: ResumeBulletRewrite): ResumeEditOperation {
 }
 
 function normalizeLayoutAdjustment(value?: ResumeLayoutAdjustment): ResumeLayoutAdjustment {
-  const fontScale = typeof value?.fontScale === "number" && Number.isFinite(value.fontScale) ? value.fontScale : 1;
   return {
-    fontScale: Math.max(0.9, Math.min(1, fontScale)),
-    reason: value?.reason || "No layout adjustment applied."
+    fontScale:
+      typeof value?.fontScale === "number" && Number.isFinite(value.fontScale)
+        ? Math.max(0.94, Math.min(1, value.fontScale))
+        : 1,
+    reason:
+      value?.reason ||
+      "Protected typography is locked; eligible body text may scale for verified fit."
   };
+}
+
+function normalizeApprovedSkillPrunes(
+  value?: ResumeFitSkillPruneCandidate[]
+) {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  return value
+    .filter((candidate) => {
+      if (!candidate || typeof candidate !== "object") return false;
+      const key = `${candidate.paragraphId}:${candidate.skill
+        .toLowerCase()
+        .trim()}`;
+      if (
+        !/^p\d{3,5}$/.test(candidate.paragraphId) ||
+        !candidate.skill.trim() ||
+        seen.has(key)
+      ) {
+        return false;
+      }
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 12)
+    .map((candidate) => ({ ...candidate }));
 }
 
 function prepareLayoutLockedDocxOperations(
@@ -328,11 +467,6 @@ function prepareLayoutLockedDocxOperations(
 ) {
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
   const usedFallbackNodeIds = new Set<string>();
-  const insertionCounts = {
-    total: 0,
-    bySection: new Map<string, number>()
-  };
-  const hasInsertionSlack = !options.inPlaceOnly && hasClearDocxInsertionSlack(nodes);
   const prepared: NormalizedOperation[] = [];
 
   sortOperationsForDocx(operations).forEach((operation) => {
@@ -354,22 +488,6 @@ function prepareLayoutLockedDocxOperations(
 
     if (operation.type === "insert_bullet_after") {
       if (!target) {
-        prepared.push(operation);
-        return;
-      }
-
-      const sectionKey = getDocxPairingKey(target);
-      const sectionInsertions = insertionCounts.bySection.get(sectionKey) ?? 0;
-      const canInsert =
-        hasInsertionSlack &&
-        insertionCounts.total < maxDocxLayoutLockedInsertions &&
-        sectionInsertions < 1 &&
-        target.canInsertAfter &&
-        Boolean(operation.replacement.trim());
-
-      if (canInsert) {
-        insertionCounts.total += 1;
-        insertionCounts.bySection.set(sectionKey, sectionInsertions + 1);
         prepared.push(operation);
         return;
       }
@@ -419,7 +537,7 @@ function convertDocxInsertionOperationToInPlace(
   const detail = stripDocxBulletPrefix(operation.replacement);
   if (!current || !detail) return null;
 
-  const replacement = fitFoldedDocxDetail(foldTarget, current, detail, operation.maxChars);
+  const replacement = fitFoldedDocxDetail(foldTarget, current, operation);
   if (!replacement || normalizeForMatch(current) === normalizeForMatch(replacement)) return null;
 
   return {
@@ -429,6 +547,7 @@ function convertDocxInsertionOperationToInPlace(
     insertAfterParagraphId: undefined,
     original: foldTarget.editableText || foldTarget.text,
     replacement,
+    replacementCandidates: [replacement],
     normalizedOriginal: normalizeForMatch(foldTarget.editableText || foldTarget.text),
     reason: `${operation.reason} Converted from insertion to in-place edit to preserve layout.`
   };
@@ -464,23 +583,27 @@ function findDocxInsertionFoldTarget(
 function fitFoldedDocxDetail(
   target: ParagraphNodeInfo,
   current: string,
-  detail: string,
-  requestedMaxChars?: number
+  operation: NormalizedOperation
 ) {
   const layoutBudget = target.maxReplacementChars ?? target.editableCharBudget;
   const operationBudget =
-    typeof requestedMaxChars === "number" && Number.isFinite(requestedMaxChars)
-      ? Math.max(24, Math.min(900, Math.round(requestedMaxChars)))
+    typeof operation.maxChars === "number" && Number.isFinite(operation.maxChars)
+      ? Math.max(24, Math.min(900, Math.round(operation.maxChars)))
       : undefined;
   const budget = layoutBudget && operationBudget ? Math.min(layoutBudget, operationBudget) : layoutBudget ?? operationBudget;
   const separator = /[.;:]$/.test(current) ? " " : "; ";
-  const combined = cleanDocxReplacementText(`${current}${separator}${detail}`);
-  if (!budget || combined.length <= budget) return combined;
-
-  const available = budget - current.length - separator.length;
-  if (available < 24) return "";
-  const shortenedDetail = detail.slice(0, available).replace(/\s+\S*$/, "").trim();
-  return shortenedDetail ? cleanDocxReplacementText(`${current}${separator}${shortenedDetail}`) : "";
+  const details = [
+    stripDocxBulletPrefix(operation.replacement),
+    ...(operation.replacementCandidates ?? []).map(stripDocxBulletPrefix)
+  ];
+  const combined = details.map((detail) => cleanDocxReplacementText(`${current}${separator}${detail}`));
+  return (
+    selectCompleteReplacementCandidate({
+      replacement: combined[0] ?? "",
+      replacementCandidates: combined.slice(1),
+      maxChars: budget
+    })?.text ?? ""
+  );
 }
 
 function stripDocxBulletPrefix(value: string) {
@@ -532,6 +655,7 @@ function buildParagraphNodes(document: Document): ParagraphNodeInfo[] {
       tabStopSignature,
       isTerminalSection: isTerminalSectionName(currentSection || text),
       editableCharBudget: computeEditableCharBudget(role, leftText || text, editableTextElements.map((item) => item.text).join("").trim()),
+      format: extractDocxParagraphFormat(paragraph),
       hasLockedDate: Boolean(lockedText && dateLikePattern.test(lockedText)),
       isBullet,
       canEdit: canEditRole(role, editableTextElements),
@@ -569,6 +693,10 @@ function toLayoutParagraph(node: ParagraphNodeInfo): ResumeLayoutMapParagraph {
     nearbyBulletIds: node.nearbyBulletIds,
     maxReplacementChars: node.maxReplacementChars,
     lockedRegions: node.lockedRegions,
+    groupId: node.groupId,
+    bulletIndex: node.bulletIndex,
+    bulletCount: node.bulletCount,
+    format: node.format,
     hasLockedDate: node.hasLockedDate,
     isBullet: node.isBullet,
     canEdit: node.canEdit,
@@ -578,7 +706,8 @@ function toLayoutParagraph(node: ParagraphNodeInfo): ResumeLayoutMapParagraph {
 }
 
 function enrichParagraphNodes(nodes: ParagraphNodeInfo[]) {
-  return nodes.map((node, index) => ({
+  const groupedNodes = annotateParagraphGroups(nodes);
+  return groupedNodes.map((node, index) => ({
     ...node,
     contentHash: hashResumeContent(node.editableText || node.leftText || node.text),
     semanticTags: getSemanticTags(node),
@@ -589,6 +718,52 @@ function enrichParagraphNodes(nodes: ParagraphNodeInfo[]) {
     maxReplacementChars: node.editableCharBudget,
     lockedRegions: getLockedRegions(node)
   }));
+}
+
+function annotateParagraphGroups(nodes: ParagraphNodeInfo[]) {
+  const groupByNodeId = new Map<string, string>();
+  let activeSection = "";
+  let activeGroup = "resume:root";
+
+  nodes.forEach((node, index) => {
+    const section = normalizeForMatch(node.sectionName || activeSection || "resume") || "resume";
+    if (section !== activeSection) {
+      activeSection = section;
+      activeGroup = `${section}:root`;
+    }
+
+    const nextNode = nodes[index + 1];
+    const beginsBulletGroup =
+      node.role === "date_locked_header" ||
+      node.role === "role_header" ||
+      (!node.isBullet &&
+        Boolean(node.text.trim()) &&
+        nextNode?.isBullet === true &&
+        node.role !== "section_heading" &&
+        node.role !== "contact_header");
+    if (beginsBulletGroup) activeGroup = `${section}:${node.id}`;
+    groupByNodeId.set(node.id, activeGroup);
+  });
+
+  const bulletCounts = new Map<string, number>();
+  nodes.forEach((node) => {
+    if (!node.isBullet) return;
+    const groupId = groupByNodeId.get(node.id) ?? "resume:root";
+    bulletCounts.set(groupId, (bulletCounts.get(groupId) ?? 0) + 1);
+  });
+
+  const bulletIndexes = new Map<string, number>();
+  return nodes.map((node) => {
+    const groupId = groupByNodeId.get(node.id) ?? "resume:root";
+    const bulletIndex = node.isBullet ? bulletIndexes.get(groupId) ?? 0 : undefined;
+    if (node.isBullet) bulletIndexes.set(groupId, (bulletIndex ?? 0) + 1);
+    return {
+      ...node,
+      groupId,
+      bulletIndex,
+      bulletCount: node.isBullet ? bulletCounts.get(groupId) ?? 0 : undefined
+    };
+  });
 }
 
 function hashResumeContent(value: string) {
@@ -778,18 +953,29 @@ function canRemoveRole(role: ResumeDocxParagraphRole) {
 }
 
 function getEditableTextElements(role: ResumeDocxParagraphRole, textElements: TextElementInfo[]) {
-  if (role === "contact_header" || role === "section_heading" || role === "divider" || role === "blank") {
+  if (
+    role === "contact_header" ||
+    role === "section_heading" ||
+    role === "divider" ||
+    role === "blank" ||
+    role === "role_header" ||
+    role === "date_locked_header"
+  ) {
     return [];
-  }
-  if (role === "date_locked_header") {
-    return textElements.filter((item) => !item.protected && !item.afterTab);
   }
   return textElements.filter((item) => !item.protected);
 }
 
 function canEditRole(role: ResumeDocxParagraphRole, editableTextElements: TextElementInfo[]) {
   if (!editableTextElements.length) return false;
-  return role !== "contact_header" && role !== "section_heading" && role !== "divider" && role !== "blank";
+  return (
+    role !== "contact_header" &&
+    role !== "section_heading" &&
+    role !== "divider" &&
+    role !== "blank" &&
+    role !== "role_header" &&
+    role !== "date_locked_header"
+  );
 }
 
 function applyDocxParagraphEdits(
@@ -800,16 +986,19 @@ function applyDocxParagraphEdits(
 ) {
   const stats = createDocxStats();
   const skippedChanges: ResumeSkippedChange[] = [];
-  if (!operations.length) return { stats, skippedChanges };
+  const appliedChanges: ResumeAppliedChange[] = [];
+  if (!operations.length) {
+    return {
+      stats,
+      appliedChanges,
+      skippedChanges,
+      acceptedImprovementSections: new Set<string>()
+    };
+  }
 
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
   const usedFallbackNodeIds = new Set<string>();
   const acceptedImprovementCounts = new Map<string, number>();
-  const insertionCounts = {
-    total: 0,
-    bySection: new Map<string, number>()
-  };
-  const hasInsertionSlack = !options.inPlaceOnly && hasClearDocxInsertionSlack(nodes);
 
   sortOperationsForDocx(operations).forEach((operation) => {
     const resolved = resolveOperationTarget(operation, nodes, nodeById, usedFallbackNodeIds, options);
@@ -820,71 +1009,71 @@ function applyDocxParagraphEdits(
     }
 
     if (operation.type === "insert_bullet_after") {
-      const sectionKey = getDocxPairingKey(target);
-      const sectionInsertions = insertionCounts.bySection.get(sectionKey) ?? 0;
-      const canInsert =
-        hasInsertionSlack &&
-        insertionCounts.total < maxDocxLayoutLockedInsertions &&
-        sectionInsertions < 1 &&
-        target.canInsertAfter &&
-        Boolean(operation.replacement.trim());
-
-      if (!canInsert) {
-        const converted = convertDocxInsertionOperationToInPlace(operation, target, nodes, nodeById);
-        const convertedTarget = converted?.paragraphId ? nodeById.get(converted.paragraphId) ?? null : null;
-        if (!converted || !convertedTarget?.canEdit) {
-          recordDocxSkip(
-            skippedChanges,
-            stats,
-            operation,
-            "Insertion skipped because there was not enough layout slack for a new bullet.",
-            "unsafe_insertion"
-          );
-          return;
-        }
-
-        const fitted = fitReplacementToParagraphBudget(convertedTarget, buildReplacementText(convertedTarget, converted), converted.maxChars);
-        if (!fitted.text) {
-          recordDocxSkip(skippedChanges, stats, operation, "Converted insertion was too long for the target line.", "visual_gap_risk");
-          return;
-        }
-
-        if (!replaceParagraphEditableText(convertedTarget, fitted.text)) {
-          recordDocxSkip(
-            skippedChanges,
-            stats,
-            operation,
-            "Converted insertion could not be applied without touching protected text.",
-            "protected_layout"
-          );
-          return;
-        }
-
-        stats.convertedEdits = (stats.convertedEdits ?? 0) + 1;
-        if (fitted.shortened) {
-          stats.autoShortenedEdits = (stats.autoShortenedEdits ?? 0) + 1;
-          stats.shortenedEdits = (stats.shortenedEdits ?? 0) + 1;
-        }
-        stats.appliedEdits += 1;
-        recordAcceptedDocxImprovement(acceptedImprovementCounts, convertedTarget);
+      const converted = convertDocxInsertionOperationToInPlace(operation, target, nodes, nodeById);
+      const convertedTarget = converted?.paragraphId ? nodeById.get(converted.paragraphId) ?? null : null;
+      if (!converted || !convertedTarget?.canEdit) {
+        recordDocxSkip(
+          skippedChanges,
+          stats,
+          operation,
+          "Insertion skipped because exact layout mode cannot add paragraphs.",
+          "unsafe_insertion"
+        );
         return;
       }
 
-      const insertTarget = target.canInsertAfter ? resolved : findSafeInsertAnchor(operation, target, nodes, nodeById);
-      if (!insertTarget?.node.canInsertAfter) {
-        recordDocxSkip(skippedChanges, stats, operation, "Could not find a safe bullet anchor in this section.", "protected_layout");
+      const fitted = fitReplacementToParagraphBudget(convertedTarget, converted);
+      if (!fitted.text) {
+        recordDocxSkip(
+          skippedChanges,
+          stats,
+          operation,
+          fitted.failureCategory === "protected_content"
+            ? "Every complete fitting candidate changed a locked metric or added an unsupported number."
+            : "No complete replacement candidate fit the target line.",
+          fitted.failureCategory ?? "replacement_did_not_fit"
+        );
         return;
       }
-      const inserted = insertBulletAfter(insertTarget.node, operation.replacement, nodes);
-      if (!inserted) {
-        recordDocxSkip(skippedChanges, stats, operation, "Could not find a nearby bullet style to clone.", "protected_layout");
+
+      if (!preservesLockedMetrics(convertedTarget.editableText, fitted.text)) {
+        recordDocxSkip(
+          skippedChanges,
+          stats,
+          operation,
+          "Converted insertion changed a locked metric or added an unsupported number.",
+          "protected_content"
+        );
         return;
       }
-      if (resolved.repaired || insertTarget.repaired) stats.repairedEdits = (stats.repairedEdits ?? 0) + 1;
-      stats.insertedBullets += 1;
-      insertionCounts.total += 1;
-      insertionCounts.bySection.set(sectionKey, sectionInsertions + 1);
-      recordAcceptedDocxImprovement(acceptedImprovementCounts, insertTarget.node);
+
+      if (!replaceParagraphEditableText(convertedTarget, fitted.text)) {
+        recordDocxSkip(
+          skippedChanges,
+          stats,
+          operation,
+          "Converted insertion could not be applied without touching protected text.",
+          "protected_layout"
+        );
+        return;
+      }
+
+      stats.convertedEdits = (stats.convertedEdits ?? 0) + 1;
+      if (fitted.shortened) {
+        stats.autoShortenedEdits = (stats.autoShortenedEdits ?? 0) + 1;
+        stats.shortenedEdits = (stats.shortenedEdits ?? 0) + 1;
+      }
+      if (fitted.candidateIndex >= 0 && converted.replacementCandidates?.length) {
+        stats.selectedCandidateCount = (stats.selectedCandidateCount ?? 0) + 1;
+      }
+      stats.appliedEdits += 1;
+      appliedChanges.push({
+        ...converted,
+        replacement: fitted.text,
+        matchedText: convertedTarget.text,
+        repairNote: "Converted insertion to an in-place edit."
+      });
+      recordAcceptedDocxImprovement(acceptedImprovementCounts, convertedTarget);
       return;
     }
 
@@ -898,6 +1087,17 @@ function applyDocxParagraphEdits(
             operation,
             "Removal replacement was empty or could not safely edit this line.",
             "content"
+          );
+          return;
+        }
+
+        if (!preservesLockedMetrics(target.editableText, converted.text)) {
+          recordDocxSkip(
+            skippedChanges,
+            stats,
+            operation,
+            "Removal replacement changed a locked metric or added an unsupported number.",
+            "protected_content"
           );
           return;
         }
@@ -918,6 +1118,13 @@ function applyDocxParagraphEdits(
         if (converted.type !== "shorten_paragraph") recordAcceptedDocxImprovement(acceptedImprovementCounts, target);
         if (resolved.repaired) stats.repairedEdits = (stats.repairedEdits ?? 0) + 1;
         stats.appliedEdits += 1;
+        appliedChanges.push({
+          ...operation,
+          type: converted.type,
+          replacement: converted.text,
+          matchedText: target.text,
+          repairNote: "Converted removal request to an in-place edit."
+        });
         return;
       }
 
@@ -936,9 +1143,28 @@ function applyDocxParagraphEdits(
       return;
     }
 
-    const fitted = fitReplacementToParagraphBudget(target, buildReplacementText(target, operation), operation.maxChars);
+    const fitted = fitReplacementToParagraphBudget(target, operation);
     if (!fitted.text) {
-      recordDocxSkip(skippedChanges, stats, operation, "The replacement text was empty after layout protection.", "content");
+      recordDocxSkip(
+        skippedChanges,
+        stats,
+        operation,
+        fitted.failureCategory === "protected_content"
+          ? "Every complete fitting candidate changed a locked metric or added an unsupported number."
+          : "No complete replacement candidate fit the target line.",
+        fitted.failureCategory ?? "replacement_did_not_fit"
+      );
+      return;
+    }
+
+    if (!preservesLockedMetrics(target.editableText, fitted.text)) {
+      recordDocxSkip(
+        skippedChanges,
+        stats,
+        operation,
+        "The replacement changed a locked metric or added an unsupported number.",
+        "protected_content"
+      );
       return;
     }
 
@@ -951,16 +1177,285 @@ function applyDocxParagraphEdits(
     if (fitted.shortened) {
       stats.autoShortenedEdits = (stats.autoShortenedEdits ?? 0) + 1;
       stats.shortenedEdits = (stats.shortenedEdits ?? 0) + 1;
+      stats.shortenedForFit = (stats.shortenedForFit ?? 0) + 1;
     } else if (operation.type === "shorten_line" || operation.type === "shorten_paragraph") {
       stats.shortenedEdits = (stats.shortenedEdits ?? 0) + 1;
     }
+    if (fitted.candidateIndex >= 0 && operation.replacementCandidates?.length) {
+      stats.selectedCandidateCount = (stats.selectedCandidateCount ?? 0) + 1;
+    }
     stats.appliedEdits += 1;
+    appliedChanges.push({
+      ...operation,
+      replacement: fitted.text,
+      matchedText: target.text,
+      repairNote: resolved.repaired ? resolved.repairNote : undefined
+    });
     if (isDocxPairingImprovementOperation(operation.type)) {
       recordAcceptedDocxImprovement(acceptedImprovementCounts, target);
     }
   });
 
-  return { stats, skippedChanges };
+  return {
+    stats,
+    appliedChanges,
+    skippedChanges,
+    acceptedImprovementSections: new Set(
+      [...acceptedImprovementCounts.entries()]
+        .filter(([, count]) => count > 0)
+        .map(([section]) => section)
+    )
+  };
+}
+
+function applyApprovedSkillPrunes(
+  nodes: ParagraphNodeInfo[],
+  approved: ResumeFitSkillPruneCandidate[]
+) {
+  const prunedSkills: ResumeFitSkillPruneCandidate[] = [];
+  const skippedChanges: ResumeSkippedChange[] = [];
+  const skippedByReason: Record<string, number> = {};
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const totalSkills = nodes
+    .filter((node) => node.role === "skills_line")
+    .reduce((sum, node) => sum + parseSkillsPayload(node.text).skills.length, 0);
+  const overallLimit = Math.max(0, Math.floor(totalSkills * 0.2));
+  const perParagraph = new Map<string, number>();
+
+  const skip = (candidate: ResumeFitSkillPruneCandidate, reason: string) => {
+    skippedChanges.push({
+      paragraphId: candidate.paragraphId,
+      original: candidate.originalText,
+      replacement: candidate.originalText,
+      reason: candidate.reason,
+      skipReason: reason,
+      skipCategory: "skill_prune_guard"
+    });
+    skippedByReason.skill_prune_guard =
+      (skippedByReason.skill_prune_guard ?? 0) + 1;
+  };
+
+  for (const candidate of approved) {
+    if (prunedSkills.length >= overallLimit) {
+      skip(candidate, "Skill pruning stopped at the 20% overall limit.");
+      continue;
+    }
+    const node = nodeById.get(candidate.paragraphId);
+    if (
+      !node ||
+      node.role !== "skills_line" ||
+      !node.canEdit ||
+      (candidate.contentHash && node.contentHash !== candidate.contentHash)
+    ) {
+      skip(candidate, "The skill line no longer matched its verified source.");
+      continue;
+    }
+    if ((perParagraph.get(node.id) ?? 0) >= 2) {
+      skip(candidate, "No more than two skills may be pruned from one line.");
+      continue;
+    }
+
+    const parsed = parseSkillsPayload(node.editableText || node.text);
+    if (parsed.skills.length <= 3) {
+      skip(candidate, "Every skill category must retain at least three skills.");
+      continue;
+    }
+    const targetKey = normalizeForMatch(candidate.skill);
+    const index = parsed.skills.findIndex(
+      (skill) => normalizeForMatch(skill) === targetKey
+    );
+    if (index < 0) {
+      skip(candidate, "The selected skill was not present in the final line.");
+      continue;
+    }
+
+    const remaining = parsed.skills.filter((_, skillIndex) => skillIndex !== index);
+    const replacement = `${parsed.label}${
+      parsed.label ? " " : ""
+    }${remaining.join(", ")}`.trim();
+    if (!replaceParagraphEditableText(node, replacement)) {
+      skip(candidate, "The skill could not be removed without changing its label formatting.");
+      continue;
+    }
+    perParagraph.set(node.id, (perParagraph.get(node.id) ?? 0) + 1);
+    prunedSkills.push(candidate);
+  }
+
+  return { prunedSkills, skippedChanges, skippedByReason };
+}
+
+function parseSkillsPayload(value: string) {
+  const separatorIndex = value.indexOf(":");
+  const label =
+    separatorIndex >= 0 ? value.slice(0, separatorIndex + 1).trim() : "";
+  const body = separatorIndex >= 0 ? value.slice(separatorIndex + 1) : value;
+  return {
+    label,
+    skills: body
+      .split(/[,;|]/)
+      .map((skill) => skill.trim())
+      .filter(Boolean)
+  };
+}
+
+function applyEligibleBodyFontScale(
+  nodes: ParagraphNodeInfo[],
+  requestedScale: number,
+  defaultFontSizePt: number
+) {
+  const scale = Math.max(0.94, Math.min(1, requestedScale));
+  if (scale >= 0.999) return [];
+  const scaledParagraphIds: string[] = [];
+
+  nodes.forEach((node) => {
+    if (!isBodyFontScaleEligible(node) || !node.element.parentNode) return;
+    let changed = false;
+    getElementsByLocalName(node.element, "r").forEach((run) => {
+      const text = getElementsByLocalName(run, "t")
+        .map((element) => element.textContent ?? "")
+        .join("");
+      if (!text.trim()) return;
+      const runProperties = ensureRunProperties(run);
+      const size = getElementsByLocalName(runProperties, "sz")[0];
+      const explicitHalfPoints = size
+        ? Number(getWordAttribute(size, "val"))
+        : Number.NaN;
+      const originalPt =
+        Number.isFinite(explicitHalfPoints) && explicitHalfPoints > 0
+          ? explicitHalfPoints / 2
+          : node.format?.fontSizePt ?? defaultFontSizePt;
+      const targetPt = Math.max(9, Math.round(originalPt * scale * 2) / 2);
+      if (targetPt >= originalPt - 0.01) return;
+      setRunFontSize(runProperties, targetPt * 2);
+      changed = true;
+    });
+    if (changed) scaledParagraphIds.push(node.id);
+  });
+
+  return scaledParagraphIds;
+}
+
+function isBodyFontScaleEligible(node: ParagraphNodeInfo) {
+  return (
+    node.role === "body" ||
+    node.role === "bullet" ||
+    node.role === "skills_line" ||
+    node.role === "education_line" ||
+    node.role === "activity_line"
+  );
+}
+
+function ensureRunProperties(run: Element) {
+  const existing = getElementsByLocalName(run, "rPr")[0];
+  if (existing) return existing;
+  const document = run.ownerDocument;
+  if (!document) throw new Error("DOCX run has no owner document.");
+  const properties = document.createElementNS(wordNamespace, "w:rPr");
+  run.insertBefore(properties, run.firstChild);
+  return properties;
+}
+
+function setRunFontSize(runProperties: Element, halfPoints: number) {
+  const document = runProperties.ownerDocument;
+  if (!document) throw new Error("DOCX run properties have no owner document.");
+  const value = String(Math.max(18, Math.round(halfPoints)));
+  for (const localName of ["sz", "szCs"]) {
+    let element = getElementsByLocalName(runProperties, localName)[0];
+    if (!element) {
+      element = document.createElementNS(wordNamespace, `w:${localName}`);
+      runProperties.appendChild(element);
+    }
+    setWordAttribute(element, "val", value);
+  }
+}
+
+function applyApprovedParagraphRemovals(
+  nodes: ParagraphNodeInfo[],
+  approvedParagraphIds: string[],
+  acceptedImprovementSections: Set<string>
+) {
+  const removedParagraphIds: string[] = [];
+  const skippedChanges: ResumeSkippedChange[] = [];
+  const skippedByReason: Record<string, number> = {};
+  const nodesById = new Map(nodes.map((node) => [node.id, node]));
+  const nodeIndexes = new Map(nodes.map((node, index) => [node.id, index]));
+  const removedPerSection = new Map<string, number>();
+  const removedGroups = new Set<string>();
+  const removedIndexes = new Set<number>();
+
+  const skip = (node: ParagraphNodeInfo | undefined, reason: string, category: string) => {
+    skippedChanges.push({
+      paragraphId: node?.id,
+      sectionName: node?.sectionName,
+      original: node?.text,
+      skipReason: reason,
+      skipCategory: category
+    });
+    skippedByReason[category] = (skippedByReason[category] ?? 0) + 1;
+  };
+
+  for (const paragraphId of approvedParagraphIds.slice(0, maxFitRemovals)) {
+    const node = nodesById.get(paragraphId);
+    if (!node) {
+      skip(undefined, "The approved fit-removal paragraph could not be found.", "mapping");
+      continue;
+    }
+
+    const sectionKey = getDocxPairingKey(node);
+    const groupId = node.groupId || `${sectionKey}:root`;
+    const nodeIndex = nodeIndexes.get(node.id) ?? -10;
+    const sectionRemovalCount = removedPerSection.get(sectionKey) ?? 0;
+    const remainingGroupBullets = (node.bulletCount ?? 0) - (removedGroups.has(groupId) ? 1 : 0);
+    const eligibleSection =
+      /\b(experience|employment|work|project|leadership|activity|activities|involvement|volunteer|organization|award)\b/i.test(
+        node.sectionName || ""
+      );
+
+    if (
+      !eligibleSection ||
+      !node.isBullet ||
+      !node.canRemove ||
+      node.hasLockedDate ||
+      node.hasTabStop ||
+      isProtectedParagraph(node.text) ||
+      getLockedMetricTokens(node.text).length > 0
+    ) {
+      skip(node, "This paragraph is protected from fit removal.", "protected_layout");
+      continue;
+    }
+    if (!acceptedImprovementSections.has(sectionKey)) {
+      skip(node, "Fit removal requires an accepted higher-value edit in the same section.", "group_balance");
+      continue;
+    }
+    if ((node.bulletIndex ?? 0) === 0 || remainingGroupBullets <= 2) {
+      skip(node, "The first bullet and groups with two or fewer remaining bullets are protected.", "group_balance");
+      continue;
+    }
+    if (sectionRemovalCount >= maxFitRemovalsPerSection || removedGroups.has(groupId)) {
+      skip(node, "Removal limits protect this section and content group.", "group_balance");
+      continue;
+    }
+    if (removedIndexes.has(nodeIndex - 1) || removedIndexes.has(nodeIndex + 1)) {
+      skip(node, "Adjacent bullet removals are not allowed.", "group_balance");
+      continue;
+    }
+    if (!node.element.parentNode) {
+      skip(node, "The bullet could not be removed without changing its container.", "protected_layout");
+      continue;
+    }
+
+    node.element.parentNode.removeChild(node.element);
+    removedParagraphIds.push(node.id);
+    removedPerSection.set(sectionKey, sectionRemovalCount + 1);
+    removedGroups.add(groupId);
+    removedIndexes.add(nodeIndex);
+  }
+
+  return {
+    removedParagraphIds,
+    skippedChanges,
+    skippedByReason
+  };
 }
 
 function createDocxStats(): ResumeDocxEditStats {
@@ -973,10 +1468,27 @@ function createDocxStats(): ResumeDocxEditStats {
     convertedEdits: 0,
     autoShortenedEdits: 0,
     shortenedEdits: 0,
+    selectedCandidateCount: 0,
+    shortenedForFit: 0,
+    removedForFit: 0,
+    rejectedForFit: 0,
+    removedParagraphIds: [],
     skippedByReason: {},
     validationStatus: "not_generated",
     fontScale: 1
   };
+}
+
+function mergeCountRecords(
+  ...records: Array<Record<string, number> | undefined>
+) {
+  const merged: Record<string, number> = {};
+  records.forEach((record) => {
+    Object.entries(record ?? {}).forEach(([key, value]) => {
+      merged[key] = (merged[key] ?? 0) + value;
+    });
+  });
+  return merged;
 }
 
 function recordDocxSkip(
@@ -989,6 +1501,9 @@ function recordDocxSkip(
   skippedChanges.push({ ...operation, skipReason, skipCategory });
   stats.skippedByReason = stats.skippedByReason ?? {};
   stats.skippedByReason[skipCategory] = (stats.skippedByReason[skipCategory] ?? 0) + 1;
+  if (skipCategory === "replacement_did_not_fit") {
+    stats.rejectedForFit = (stats.rejectedForFit ?? 0) + 1;
+  }
 }
 
 function isDocxPairingImprovementOperation(type: ResumeEditOperationType) {
@@ -1244,31 +1759,58 @@ function protectLayoutText(target: ParagraphNodeInfo, replacement: string) {
 
 function fitReplacementToParagraphBudget(
   target: ParagraphNodeInfo,
-  replacement: string,
-  requestedMaxChars?: number
+  operation: NormalizedOperation
 ): FittedReplacement {
-  let safeReplacement = cleanDocxReplacementText(replacement);
-  if (!safeReplacement) return { text: "", shortened: false };
+  const candidates = [
+    operation.replacement,
+    ...(operation.replacementCandidates ?? [])
+  ].map((candidate) =>
+    buildReplacementText(target, {
+      ...operation,
+      replacement: candidate,
+      replacementCandidates: undefined
+    })
+  );
+  const selection = selectCompleteReplacementCandidate({
+    replacement: candidates[0] ?? "",
+    replacementCandidates: candidates.slice(1),
+    transform: (candidate) => {
+      let safeReplacement = cleanDocxReplacementText(candidate);
+      if (target.role === "date_locked_header") {
+        safeReplacement = safeReplacement.replace(/\t.*/, "").trim();
+        if (target.rightText) {
+          safeReplacement = safeReplacement
+            .replace(new RegExp(`${escapeRegExp(target.rightText)}\\s*$`, "i"), "")
+            .trim();
+        }
+      }
+      return safeReplacement;
+    },
+    accept: (candidate) => preservesLockedMetrics(target.editableText, candidate)
+  });
 
-  if (target.role === "date_locked_header") {
-    safeReplacement = safeReplacement.replace(/\t.*/, "").trim();
-    if (target.rightText) {
-      safeReplacement = safeReplacement.replace(new RegExp(`${escapeRegExp(target.rightText)}\\s*$`, "i"), "").trim();
-    }
+  if (!selection) {
+    const hadCompleteButProtectedCandidate = candidates.some((candidate) => {
+      const cleaned = cleanDocxReplacementText(candidate);
+      return (
+        Boolean(cleaned) &&
+        !preservesLockedMetrics(target.editableText, cleaned)
+      );
+    });
+    return {
+      text: "",
+      shortened: false,
+      candidateIndex: -1,
+      failureCategory: hadCompleteButProtectedCandidate
+        ? "protected_content"
+        : "replacement_did_not_fit"
+    };
   }
 
-  const layoutBudget = target.maxReplacementChars ?? target.editableCharBudget;
-  const operationBudget =
-    typeof requestedMaxChars === "number" && Number.isFinite(requestedMaxChars)
-      ? Math.max(24, Math.min(900, Math.round(requestedMaxChars)))
-      : undefined;
-  const budget = layoutBudget && operationBudget ? Math.min(layoutBudget, operationBudget) : layoutBudget ?? operationBudget;
-  if (!budget || safeReplacement.length <= budget) return { text: safeReplacement, shortened: false };
-
-  const shortened = safeReplacement.slice(0, Math.max(24, budget - 1)).replace(/\s+\S*$/, "").trim();
   return {
-    text: shortened || safeReplacement.slice(0, budget).trim(),
-    shortened: true
+    text: selection.text,
+    shortened: selection.usedAlternative,
+    candidateIndex: selection.candidateIndex
   };
 }
 
@@ -1277,7 +1819,13 @@ function convertDocxRemovalToReplacement(target: ParagraphNodeInfo, operation: N
   const replacement = cleanDocxReplacementText(operation.replacement);
   if (!target.canEdit || !current || !replacement) return null;
 
-  const fitted = fitReplacementToParagraphBudget(target, protectLayoutText(target, replacement), operation.maxChars);
+  const fitted = fitReplacementToParagraphBudget(target, {
+    ...operation,
+    replacement: protectLayoutText(target, replacement),
+    replacementCandidates: operation.replacementCandidates?.map((candidate) =>
+      protectLayoutText(target, candidate)
+    )
+  });
   if (!fitted.text || normalizeForMatch(fitted.text) === normalizeForMatch(current)) return null;
 
   return {
@@ -1384,10 +1932,175 @@ function applyReplacementToEditableTextElements(editableTextElements: TextElemen
     return;
   }
 
+  const distributed = distributeReplacementAcrossTextElements(editableTextElements, finalReplacement);
   editableTextElements.forEach((info, index) => {
-    setTextElementContent(info.element, index === 0 ? preserveWhitespaceAround(info.text, finalReplacement) : "");
-    info.text = index === 0 ? finalReplacement : "";
+    const nextText = distributed[index] ?? "";
+    setTextElementContent(info.element, nextText);
+    info.text = nextText;
   });
+}
+
+function distributeReplacementAcrossTextElements(editableTextElements: TextElementInfo[], replacement: string) {
+  if (editableTextElements.length <= 1) return [replacement];
+
+  const originalText = editableTextElements.map((item) => item.text).join("");
+  const originalWords = getIndexedWords(originalText);
+  const replacementWords = getIndexedWords(replacement);
+  if (!replacementWords.length) return editableTextElements.map(() => "");
+
+  const elementRanges: Array<{ start: number; end: number }> = [];
+  let elementOffset = 0;
+  editableTextElements.forEach((item) => {
+    elementRanges.push({
+      start: elementOffset,
+      end: elementOffset + item.text.length
+    });
+    elementOffset += item.text.length;
+  });
+
+  const originalElementIndexes = originalWords.map((word) => {
+    const center = word.start + Math.max(0, Math.floor((word.end - word.start) / 2));
+    const index = elementRanges.findIndex((range) => center >= range.start && center < range.end);
+    return index >= 0 ? index : Math.max(0, editableTextElements.length - 1);
+  });
+  const matches = getWordLcsMatches(originalWords, replacementWords);
+  const matchedReplacementIndexes = new Map(matches.map((match) => [match.replacementIndex, originalElementIndexes[match.originalIndex] ?? 0]));
+  const assignedIndexes: number[] = [];
+
+  replacementWords.forEach((_word, replacementIndex) => {
+    const matchedIndex = matchedReplacementIndexes.get(replacementIndex);
+    if (typeof matchedIndex === "number") {
+      assignedIndexes.push(matchedIndex);
+      return;
+    }
+
+    const previousMatch = findNearestMatchedIndex(matchedReplacementIndexes, replacementIndex, -1);
+    const nextMatch = findNearestMatchedIndex(matchedReplacementIndexes, replacementIndex, 1);
+    let selectedIndex: number;
+
+    if (previousMatch && nextMatch) {
+      const previousDistance = replacementIndex - previousMatch.replacementIndex;
+      const nextDistance = nextMatch.replacementIndex - replacementIndex;
+      selectedIndex = previousDistance < nextDistance ? previousMatch.elementIndex : nextMatch.elementIndex;
+    } else if (previousMatch) {
+      selectedIndex = previousMatch.elementIndex;
+    } else if (nextMatch) {
+      selectedIndex = nextMatch.elementIndex;
+    } else {
+      const proportionalIndex = Math.floor(
+        (replacementIndex / Math.max(1, replacementWords.length - 1)) * Math.max(0, originalElementIndexes.length - 1)
+      );
+      selectedIndex = originalElementIndexes[proportionalIndex] ?? 0;
+    }
+
+    assignedIndexes.push(selectedIndex);
+  });
+
+  for (let index = 1; index < assignedIndexes.length; index += 1) {
+    assignedIndexes[index] = Math.max(assignedIndexes[index - 1] ?? 0, assignedIndexes[index] ?? 0);
+  }
+
+  const output = editableTextElements.map(() => "");
+  replacementWords.forEach((word, index) => {
+    const elementIndex = Math.min(editableTextElements.length - 1, assignedIndexes[index] ?? 0);
+    if (index === 0) {
+      output[elementIndex] += `${replacement.slice(0, word.start)}${word.text}`;
+      return;
+    }
+
+    const previousWord = replacementWords[index - 1];
+    const previousElementIndex = Math.min(
+      editableTextElements.length - 1,
+      assignedIndexes[index - 1] ?? elementIndex
+    );
+    output[previousElementIndex] += replacement.slice(previousWord?.end ?? word.start, word.start);
+    output[elementIndex] += word.text;
+  });
+  const lastWord = replacementWords[replacementWords.length - 1];
+  const lastElementIndex = Math.min(
+    editableTextElements.length - 1,
+    assignedIndexes[assignedIndexes.length - 1] ?? 0
+  );
+  output[lastElementIndex] += replacement.slice(lastWord?.end ?? replacement.length);
+  return output;
+}
+
+function getIndexedWords(value: string) {
+  const words: Array<{ text: string; normalized: string; start: number; end: number }> = [];
+  const expression = /\S+/g;
+  let match: RegExpExecArray | null;
+
+  while ((match = expression.exec(value))) {
+    const text = match[0];
+    words.push({
+      text,
+      normalized: normalizeForMatch(text),
+      start: match.index,
+      end: match.index + text.length
+    });
+  }
+
+  return words;
+}
+
+function getWordLcsMatches(
+  originalWords: Array<{ normalized: string }>,
+  replacementWords: Array<{ normalized: string }>
+) {
+  const rows = originalWords.length + 1;
+  const columns = replacementWords.length + 1;
+  const matrix = Array.from({ length: rows }, () => new Uint16Array(columns));
+
+  for (let originalIndex = 1; originalIndex < rows; originalIndex += 1) {
+    for (let replacementIndex = 1; replacementIndex < columns; replacementIndex += 1) {
+      matrix[originalIndex][replacementIndex] =
+        originalWords[originalIndex - 1]?.normalized === replacementWords[replacementIndex - 1]?.normalized
+          ? (matrix[originalIndex - 1]?.[replacementIndex - 1] ?? 0) + 1
+          : Math.max(
+              matrix[originalIndex - 1]?.[replacementIndex] ?? 0,
+              matrix[originalIndex]?.[replacementIndex - 1] ?? 0
+            );
+    }
+  }
+
+  const matches: Array<{ originalIndex: number; replacementIndex: number }> = [];
+  let originalIndex = originalWords.length;
+  let replacementIndex = replacementWords.length;
+
+  while (originalIndex > 0 && replacementIndex > 0) {
+    if (originalWords[originalIndex - 1]?.normalized === replacementWords[replacementIndex - 1]?.normalized) {
+      matches.push({
+        originalIndex: originalIndex - 1,
+        replacementIndex: replacementIndex - 1
+      });
+      originalIndex -= 1;
+      replacementIndex -= 1;
+    } else if (
+      (matrix[originalIndex - 1]?.[replacementIndex] ?? 0) >=
+      (matrix[originalIndex]?.[replacementIndex - 1] ?? 0)
+    ) {
+      originalIndex -= 1;
+    } else {
+      replacementIndex -= 1;
+    }
+  }
+
+  return matches.reverse();
+}
+
+function findNearestMatchedIndex(
+  matchedIndexes: Map<number, number>,
+  startIndex: number,
+  direction: -1 | 1
+) {
+  const lastMatchedIndex = Math.max(-1, ...matchedIndexes.keys());
+  let index = startIndex + direction;
+  while (index >= 0 && (direction === -1 || index <= lastMatchedIndex)) {
+    const elementIndex = matchedIndexes.get(index);
+    if (typeof elementIndex === "number") return { replacementIndex: index, elementIndex };
+    index += direction;
+  }
+  return null;
 }
 
 function getLabelPrefix(text: string) {
@@ -1494,9 +2207,13 @@ function createLayoutSnapshot(nodes: ParagraphNodeInfo[]): LayoutSnapshot {
   };
 }
 
-function validateLayoutPreservation(original: LayoutSnapshot, edited: LayoutSnapshot) {
-  if (edited.paragraphCount < original.paragraphCount) {
-    throw new Error("Generated DOCX removed resume paragraphs.");
+function validateLayoutPreservation(
+  original: LayoutSnapshot,
+  edited: LayoutSnapshot,
+  approvedRemovalCount = 0
+) {
+  if (edited.paragraphCount !== original.paragraphCount - approvedRemovalCount) {
+    throw new Error("Generated DOCX changed the paragraph count outside approved fit removals.");
   }
 
   if (edited.blankParagraphCount > original.blankParagraphCount) {
@@ -1592,28 +2309,6 @@ function getTextElementInfos(paragraph: Element): TextElementInfo[] {
   }));
 }
 
-function scaleFontSizesInDocument(document: Document, fontScale: number) {
-  if (fontScale >= 0.995) return;
-
-  getElementsByLocalName(document, "sz").forEach((element) => {
-    const value = getWordAttribute(element, "val");
-    const numericValue = Number(value);
-    if (!Number.isFinite(numericValue)) return;
-
-    const nextValue = Math.max(16, Math.round(numericValue * fontScale));
-    setWordAttribute(element, "val", String(nextValue));
-  });
-
-  getElementsByLocalName(document, "szCs").forEach((element) => {
-    const value = getWordAttribute(element, "val");
-    const numericValue = Number(value);
-    if (!Number.isFinite(numericValue)) return;
-
-    const nextValue = Math.max(16, Math.round(numericValue * fontScale));
-    setWordAttribute(element, "val", String(nextValue));
-  });
-}
-
 async function validateDocxBuffer(buffer: Uint8Array | ArrayBuffer, options: { extractText: boolean }) {
   const zip = await JSZip.loadAsync(buffer);
   const documentFile = zip.file("word/document.xml");
@@ -1636,6 +2331,298 @@ async function validateDocxBuffer(buffer: Uint8Array | ArrayBuffer, options: { e
   }
 }
 
+export async function validateExactDocxPackageFidelity(
+  originalDocx: Buffer | ArrayBuffer | Uint8Array,
+  editedDocx: Buffer | ArrayBuffer | Uint8Array,
+  options?: {
+    removedParagraphIds?: string[];
+    bodyFontScale?: number;
+    scaledParagraphIds?: string[];
+  }
+) {
+  const [originalZip, editedZip] = await Promise.all([JSZip.loadAsync(originalDocx), JSZip.loadAsync(editedDocx)]);
+  const originalFiles = Object.values(originalZip.files)
+    .filter((entry) => !entry.dir)
+    .map((entry) => entry.name)
+    .sort();
+  const editedFiles = Object.values(editedZip.files)
+    .filter((entry) => !entry.dir)
+    .map((entry) => entry.name)
+    .sort();
+
+  if (originalFiles.join("\n") !== editedFiles.join("\n")) {
+    throw new Error("Generated DOCX changed the document package structure.");
+  }
+
+  for (const fileName of originalFiles) {
+    if (fileName === "word/document.xml") continue;
+    const originalFile = originalZip.file(fileName);
+    const editedFile = editedZip.file(fileName);
+    if (!originalFile || !editedFile) throw new Error("Generated DOCX is missing an original document part.");
+    const [originalBytes, editedBytes] = await Promise.all([
+      originalFile.async("uint8array"),
+      editedFile.async("uint8array")
+    ]);
+    if (!equalBytes(originalBytes, editedBytes)) {
+      throw new Error(`Generated DOCX changed protected document part ${fileName}.`);
+    }
+  }
+
+  const originalDocumentFile = originalZip.file("word/document.xml");
+  const editedDocumentFile = editedZip.file("word/document.xml");
+  if (!originalDocumentFile || !editedDocumentFile) {
+    throw new Error("DOCX is missing word/document.xml.");
+  }
+  const [originalXml, editedXml] = await Promise.all([
+    originalDocumentFile.async("string"),
+    editedDocumentFile.async("string")
+  ]);
+  const originalDocument = parseXml(originalXml, "original word/document.xml");
+  const editedDocument = parseXml(editedXml, "edited word/document.xml");
+  const bodyFontScale = Math.max(
+    0.94,
+    Math.min(1, options?.bodyFontScale ?? 1)
+  );
+  const allowBodyFontScaling = bodyFontScale < 0.999;
+  if (allowBodyFontScaling) {
+    const stylesFile = originalZip.file("word/styles.xml");
+    const stylesDocument = stylesFile
+      ? parseXml(await stylesFile.async("string"), "word/styles.xml")
+      : null;
+    validateApprovedBodyFontScaling(originalDocument, editedDocument, {
+      removedParagraphIds: options?.removedParagraphIds ?? [],
+      scaledParagraphIds: options?.scaledParagraphIds ?? [],
+      bodyFontScale,
+      defaultFontSizePt: stylesDocument
+        ? extractDocxDefaultFontSize(stylesDocument) ?? 10
+        : 10
+    });
+  }
+  validateDocumentStructureSignature(
+    createDocumentStructureSignature(
+      originalDocument,
+      options?.removedParagraphIds ?? [],
+      allowBodyFontScaling
+    ),
+    editedDocument,
+    allowBodyFontScaling
+  );
+
+  return {
+    packagePartsChecked: originalFiles.length,
+    textNodeCount: getElementsByLocalName(editedDocument, "t").length,
+    removedParagraphsVerified: options?.removedParagraphIds?.length ?? 0,
+    scaledParagraphsVerified: options?.scaledParagraphIds?.length ?? 0,
+    bodyFontScale
+  };
+}
+
+function createDocumentStructureSignature(
+  document: Document,
+  removedParagraphIds: string[] = [],
+  ignoreRunFontSizes = false
+) {
+  const clone = document.cloneNode(true) as Document;
+  const removedIndexes = new Set(
+    removedParagraphIds
+      .map((id) => Number(id.replace(/^p/, "")) - 1)
+      .filter((index) => Number.isInteger(index) && index >= 0)
+  );
+  if (removedIndexes.size) {
+    getElementsByLocalName(clone, "p").forEach((paragraph, index) => {
+      if (removedIndexes.has(index)) paragraph.parentNode?.removeChild(paragraph);
+    });
+  }
+  if (ignoreRunFontSizes) {
+    removeRunFontSizes(clone);
+  }
+  getElementsByLocalName(clone, "t").forEach((element) => {
+    while (element.firstChild) element.removeChild(element.firstChild);
+  });
+  return serializeXml(clone);
+}
+
+function validateDocumentStructureSignature(
+  originalSignature: string,
+  editedDocument: Document,
+  ignoreRunFontSizes = false
+) {
+  const editedSignature = createDocumentStructureSignature(
+    editedDocument,
+    [],
+    ignoreRunFontSizes
+  );
+  if (editedSignature !== originalSignature) {
+    throw new Error("Generated DOCX changed formatting, runs, tabs, or paragraph structure outside approved text.");
+  }
+}
+
+function removeRunFontSizes(document: Document) {
+  for (const localName of ["sz", "szCs"]) {
+    getElementsByLocalName(document, localName).forEach((element) => {
+      if (getLocalName(element.parentNode as Element) === "rPr") {
+        element.parentNode?.removeChild(element);
+      }
+    });
+  }
+  getElementsByLocalName(document, "rPr").forEach((properties) => {
+    const hasElementChildren = Array.from(properties.childNodes).some(
+      (child) => child.nodeType === 1
+    );
+    if (!hasElementChildren && !(properties.textContent ?? "").trim()) {
+      properties.parentNode?.removeChild(properties);
+    }
+  });
+}
+
+function validateApprovedBodyFontScaling(
+  originalDocument: Document,
+  editedDocument: Document,
+  options: {
+    removedParagraphIds: string[];
+    scaledParagraphIds: string[];
+    bodyFontScale: number;
+    defaultFontSizePt: number;
+  }
+) {
+  const removedIndexes = new Set(
+    options.removedParagraphIds
+      .map((id) => Number(id.replace(/^p/, "")) - 1)
+      .filter((index) => Number.isInteger(index) && index >= 0)
+  );
+  const scaledIds = new Set(options.scaledParagraphIds);
+  const originalParagraphs = getElementsByLocalName(originalDocument, "p");
+  const editedParagraphs = getElementsByLocalName(editedDocument, "p");
+  const originalNodes = buildParagraphNodes(originalDocument);
+  const surviving = originalParagraphs
+    .map((paragraph, index) => ({ paragraph, index, node: originalNodes[index] }))
+    .filter(({ index }) => !removedIndexes.has(index));
+
+  if (surviving.length !== editedParagraphs.length) {
+    throw new Error("Generated DOCX changed paragraph structure while scaling body text.");
+  }
+
+  surviving.forEach(({ paragraph, index, node }, editedIndex) => {
+    const editedParagraph = editedParagraphs[editedIndex];
+    if (!editedParagraph || !node) {
+      throw new Error("Generated DOCX could not verify body font scaling.");
+    }
+    const paragraphId = node.id;
+    const originalRuns = getElementsByLocalName(paragraph, "r");
+    const editedRuns = getElementsByLocalName(editedParagraph, "r");
+    if (originalRuns.length !== editedRuns.length) {
+      throw new Error("Generated DOCX changed run structure while scaling body text.");
+    }
+
+    if (!scaledIds.has(paragraphId)) {
+      if (createRunFontSizeSignature(paragraph) !== createRunFontSizeSignature(editedParagraph)) {
+        throw new Error(
+          `Generated DOCX changed protected typography in ${paragraphId}; approved scaled paragraphs: ${[
+            ...scaledIds
+          ].join(", ") || "none"}.`
+        );
+      }
+      return;
+    }
+    if (!isBodyFontScaleEligible(node)) {
+      throw new Error(`Generated DOCX attempted to scale protected paragraph ${paragraphId}.`);
+    }
+
+    originalRuns.forEach((originalRun, runIndex) => {
+      const editedRun = editedRuns[runIndex];
+      if (!editedRun) {
+        throw new Error(`Generated DOCX changed run structure in ${paragraphId}.`);
+      }
+      const text = getElementsByLocalName(originalRun, "t")
+        .map((element) => element.textContent ?? "")
+        .join("");
+      if (!text.trim()) {
+        if (createRunFontSizeSignature(originalRun) !== createRunFontSizeSignature(editedRun)) {
+          throw new Error(`Generated DOCX scaled a non-text run in ${paragraphId}.`);
+        }
+        return;
+      }
+
+      const originalProperties = getElementsByLocalName(originalRun, "rPr")[0];
+      const originalSize = originalProperties
+        ? getElementsByLocalName(originalProperties, "sz")[0]
+        : undefined;
+      const explicitHalfPoints = originalSize
+        ? Number(getWordAttribute(originalSize, "val"))
+        : Number.NaN;
+      const originalPt =
+        Number.isFinite(explicitHalfPoints) && explicitHalfPoints > 0
+          ? explicitHalfPoints / 2
+          : node.format?.fontSizePt ?? options.defaultFontSizePt;
+      const expectedHalfPoints = Math.max(
+        18,
+        Math.round(originalPt * options.bodyFontScale * 2)
+      );
+      const originalHalfPoints = Math.round(originalPt * 2);
+
+      if (expectedHalfPoints >= originalHalfPoints) {
+        if (createRunFontSizeSignature(originalRun) !== createRunFontSizeSignature(editedRun)) {
+          throw new Error(`Generated DOCX changed typography below the 9pt floor in ${paragraphId}.`);
+        }
+        return;
+      }
+
+      const editedProperties = getElementsByLocalName(editedRun, "rPr")[0];
+      const editedSize = editedProperties
+        ? getElementsByLocalName(editedProperties, "sz")[0]
+        : undefined;
+      const editedComplexSize = editedProperties
+        ? getElementsByLocalName(editedProperties, "szCs")[0]
+        : undefined;
+      if (
+        Number(getWordAttribute(editedSize, "val")) !== expectedHalfPoints ||
+        Number(getWordAttribute(editedComplexSize, "val")) !== expectedHalfPoints
+      ) {
+        throw new Error(`Generated DOCX applied an unapproved font size in ${paragraphId}.`);
+      }
+    });
+  });
+
+  const actualScaledIds = new Set(
+    surviving
+      .filter(({ paragraph }, editedIndex) => {
+        const editedParagraph = editedParagraphs[editedIndex];
+        return (
+          Boolean(editedParagraph) &&
+          createRunFontSizeSignature(paragraph) !==
+            createRunFontSizeSignature(editedParagraph!)
+        );
+      })
+      .map(({ node, index }) => node?.id ?? `p${String(index + 1).padStart(3, "0")}`)
+  );
+  if (
+    actualScaledIds.size !== scaledIds.size ||
+    [...actualScaledIds].some((id) => !scaledIds.has(id))
+  ) {
+    throw new Error("Generated DOCX font scaling did not match the approved paragraph set.");
+  }
+}
+
+function createRunFontSizeSignature(element: Element) {
+  return getElementsByLocalName(element, "r").map((run) => {
+    const properties = getElementsByLocalName(run, "rPr")[0];
+    if (!properties) return "-/-";
+    const size = getElementsByLocalName(properties, "sz")[0];
+    const complexSize = getElementsByLocalName(properties, "szCs")[0];
+    return `${getWordAttribute(size, "val") ?? "-"}/${
+      getWordAttribute(complexSize, "val") ?? "-"
+    }`;
+  }).join("|");
+}
+
+function equalBytes(first: Uint8Array, second: Uint8Array) {
+  if (first.byteLength !== second.byteLength) return false;
+  for (let index = 0; index < first.byteLength; index += 1) {
+    if (first[index] !== second[index]) return false;
+  }
+  return true;
+}
+
 function parseXml(xml: string, fileName: string) {
   const parser = new DOMParser({
     onError: (level, message) => {
@@ -1653,6 +2640,112 @@ function parseXml(xml: string, fileName: string) {
 
 function serializeXml(document: Document) {
   return new XMLSerializer().serializeToString(document);
+}
+
+function extractDocxPageGeometry(document: Document): NonNullable<ResumeLayoutMap["page"]> {
+  const sectionProperties = getElementsByLocalName(document, "sectPr");
+  const section = sectionProperties[sectionProperties.length - 1];
+  const pageSize = section ? getElementsByLocalName(section, "pgSz")[0] : undefined;
+  const pageMargins = section ? getElementsByLocalName(section, "pgMar")[0] : undefined;
+  const widthTwips = getPositiveWordNumber(pageSize, "w", 12_240);
+  const heightTwips = getPositiveWordNumber(pageSize, "h", 15_840);
+
+  return {
+    widthPt: widthTwips / 20,
+    heightPt: heightTwips / 20,
+    marginTopPt: getPositiveWordNumber(pageMargins, "top", 720) / 20,
+    marginRightPt: getPositiveWordNumber(pageMargins, "right", 720) / 20,
+    marginBottomPt: getPositiveWordNumber(pageMargins, "bottom", 720) / 20,
+    marginLeftPt: getPositiveWordNumber(pageMargins, "left", 720) / 20
+  };
+}
+
+function extractDocxDefaultFont(stylesDocument: Document) {
+  const defaults = getElementsByLocalName(stylesDocument, "docDefaults")[0];
+  const fonts = defaults ? getElementsByLocalName(defaults, "rFonts")[0] : undefined;
+  const value = fonts
+    ? getWordAttribute(fonts, "ascii") ?? getWordAttribute(fonts, "hAnsi") ?? getWordAttribute(fonts, "cs")
+    : undefined;
+  const cleaned = value?.replace(/[^\p{L}\p{N} ._-]+/gu, "").trim();
+  return cleaned ? cleaned.slice(0, 80) : undefined;
+}
+
+function extractDocxDefaultFontSize(stylesDocument: Document) {
+  const defaults = getElementsByLocalName(stylesDocument, "docDefaults")[0];
+  const size = defaults ? getElementsByLocalName(defaults, "sz")[0] : undefined;
+  const halfPoints = size ? Number(getWordAttribute(size, "val")) : Number.NaN;
+  return Number.isFinite(halfPoints) && halfPoints > 0 ? halfPoints / 2 : undefined;
+}
+
+function extractDocxParagraphFormat(paragraph: Element): ResumeLayoutMapParagraph["format"] {
+  const paragraphProperties = getElementsByLocalName(paragraph, "pPr")[0];
+  const alignmentElement = paragraphProperties ? getElementsByLocalName(paragraphProperties, "jc")[0] : undefined;
+  const spacingElement = paragraphProperties ? getElementsByLocalName(paragraphProperties, "spacing")[0] : undefined;
+  const indentElement = paragraphProperties ? getElementsByLocalName(paragraphProperties, "ind")[0] : undefined;
+  const run = getElementsByLocalName(paragraph, "r").find((candidate) =>
+    getElementsByLocalName(candidate, "t").some((textElement) => Boolean(textElement.textContent?.trim()))
+  );
+  const runProperties = run ? getElementsByLocalName(run, "rPr")[0] : undefined;
+  const fontElement = runProperties ? getElementsByLocalName(runProperties, "rFonts")[0] : undefined;
+  const sizeElement = runProperties ? getElementsByLocalName(runProperties, "sz")[0] : undefined;
+  const boldElement = runProperties ? getElementsByLocalName(runProperties, "b")[0] : undefined;
+  const italicElement = runProperties ? getElementsByLocalName(runProperties, "i")[0] : undefined;
+  const alignment = normalizeDocxAlignment(alignmentElement ? getWordAttribute(alignmentElement, "val") : undefined);
+  const lineRule = spacingElement ? getWordAttribute(spacingElement, "lineRule") : undefined;
+  const lineValue = spacingElement ? Number(getWordAttribute(spacingElement, "line")) : Number.NaN;
+  const fontFamily = fontElement
+    ? (getWordAttribute(fontElement, "ascii") ?? getWordAttribute(fontElement, "hAnsi"))
+        ?.replace(/[^\p{L}\p{N} ._-]+/gu, "")
+        .trim()
+        .slice(0, 80)
+    : undefined;
+  const halfPoints = sizeElement ? Number(getWordAttribute(sizeElement, "val")) : Number.NaN;
+
+  return {
+    alignment,
+    spacingBeforePt: getOptionalTwipPoints(spacingElement, "before"),
+    spacingAfterPt: getOptionalTwipPoints(spacingElement, "after"),
+    lineSpacing:
+      Number.isFinite(lineValue) && lineValue > 0
+        ? lineRule === "auto" || !lineRule
+          ? Math.max(0.7, Math.min(3, lineValue / 240))
+          : Math.max(0.7, Math.min(3, lineValue / 20 / 12))
+        : undefined,
+    leftIndentPt: getOptionalTwipPoints(indentElement, "left"),
+    rightIndentPt: getOptionalTwipPoints(indentElement, "right"),
+    firstLineIndentPt: getOptionalTwipPoints(indentElement, "firstLine"),
+    hangingIndentPt: getOptionalTwipPoints(indentElement, "hanging"),
+    fontFamily: fontFamily || undefined,
+    fontSizePt: Number.isFinite(halfPoints) && halfPoints > 0 ? halfPoints / 2 : undefined,
+    bold: readDocxBoolean(boldElement),
+    italic: readDocxBoolean(italicElement)
+  };
+}
+
+function normalizeDocxAlignment(
+  value?: string | null
+): NonNullable<ResumeLayoutMapParagraph["format"]>["alignment"] {
+  if (value === "center") return "center";
+  if (value === "right" || value === "end") return "right";
+  if (value === "both" || value === "distribute" || value === "thaiDistribute") return "justify";
+  if (value === "left" || value === "start") return "left";
+  return undefined;
+}
+
+function getOptionalTwipPoints(element: Element | undefined, name: string) {
+  const value = element ? Number(getWordAttribute(element, name)) : Number.NaN;
+  return Number.isFinite(value) ? Math.max(-360, Math.min(720, value / 20)) : undefined;
+}
+
+function readDocxBoolean(element: Element | undefined) {
+  if (!element) return undefined;
+  const value = getWordAttribute(element, "val");
+  return value === "0" || value === "false" || value === "off" ? false : true;
+}
+
+function getPositiveWordNumber(element: Element | undefined, name: string, fallback: number) {
+  const value = element ? Number(getWordAttribute(element, name)) : Number.NaN;
+  return Number.isFinite(value) && value > 0 ? value : fallback;
 }
 
 function getElementsByLocalName(root: Document | Element, localName: string) {
@@ -1681,11 +2774,13 @@ function walkElements(root: Document | Element, visitor: (element: Element) => v
   visit(node);
 }
 
-function getLocalName(element: Element) {
+function getLocalName(element: Element | Node | null | undefined) {
+  if (!element) return "";
   return element.localName || element.nodeName.split(":").pop() || element.nodeName;
 }
 
-function getWordAttribute(element: Element, name: string) {
+function getWordAttribute(element: Element | null | undefined, name: string) {
+  if (!element) return null;
   return element.getAttributeNS(wordNamespace, name) ?? element.getAttribute(`w:${name}`) ?? element.getAttribute(name);
 }
 
@@ -1708,9 +2803,6 @@ function setTextElementContent(element: Element, value: string) {
   const ownerDocument = element.ownerDocument;
   if (!ownerDocument) return;
   element.appendChild(ownerDocument.createTextNode(value));
-  if (/^\s|\s$/.test(value)) {
-    element.setAttribute("xml:space", "preserve");
-  }
 }
 
 function getParagraphStyle(paragraph: Element) {
@@ -1740,6 +2832,23 @@ function isProtectedResumeText(text: string) {
   if (dateLikePattern.test(trimmed) && trimmed.length <= 40) return true;
   if (/^\d(?:\.\d{1,2})?\s*GPA$/i.test(trimmed) || /^GPA:?\s*\d(?:\.\d{1,2})?$/i.test(trimmed)) return true;
   return false;
+}
+
+function preservesLockedMetrics(original: string, replacement: string) {
+  const originalMetrics = getLockedMetricTokens(original);
+  const replacementMetrics = getLockedMetricTokens(replacement);
+  return (
+    originalMetrics.every((metric) => replacementMetrics.includes(metric)) &&
+    replacementMetrics.every((metric) => originalMetrics.includes(metric))
+  );
+}
+
+function getLockedMetricTokens(value: string) {
+  const matches =
+    value.match(
+      /(?:[$€£]\s?\d[\d,.]*(?:\s?[kmb])?|\b~?\d+(?:\.\d+)?%|\b~?\d+\+|\b\d+(?:\.\d+)?\s?(?:hours?|minutes?|days?|weeks?|months?|years?|users?|sessions?|pages?|records?|clients?|teams?|companies?|roles?|projects?)\b|\b\d+\s*(?:-|–|—|to)\s*\d+\b)/gi
+    ) ?? [];
+  return [...new Set(matches.map((match) => match.toLowerCase().replace(/\s+/g, " ").trim()))].sort();
 }
 
 function normalizeSectionName(text: string) {

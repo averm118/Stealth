@@ -15,6 +15,7 @@ Stealth is a full-stack-ready MVP for an AI Internship Radar. It helps students 
 - Premium light-mode landing page
 - Personalized deterministic dashboard with resume-derived role lanes and list-based recommendations
 - Resume profile page with PDF/DOCX/TXT/MD upload, structural text parsing, Gemini-powered profile extraction, sponsorship preference, and search type preference
+- Exact-format DOCX tailoring with run-aware text edits, locked Word layout, and Microsoft Word-rendered PDF verification
 - Job fit scoring from 0-100
 - Job detail pages with AI-assisted scoring, application strategy, sponsorship, competition, fit explanations, missing skills, resume keywords, and apply links
 - Saved jobs tracker with `saved`, `applied`, `interview`, `rejected`, and `offer` statuses
@@ -54,9 +55,21 @@ SCRAPER_BATCH_SIZE=30
 SCRAPER_LIMIT_PER_COMPANY=90
 SCRAPER_SHARD_INDEX=0
 SCRAPER_SHARD_TOTAL=4
+MS_GRAPH_TENANT_ID=your_microsoft_tenant_id
+MS_GRAPH_CLIENT_ID=your_entra_application_id
+MS_GRAPH_CLIENT_SECRET=your_entra_client_secret
+MS_GRAPH_DRIVE_ID=your_isolated_drive_id
+MS_GRAPH_FOLDER_ID=your_temporary_folder_item_id
 ```
 
 Gemini powers resume profile extraction, one-job compatibility analysis, resume tailoring, and cover letters. If the primary Gemini model hits quota, Stealth tries `GEMINI_FALLBACK_MODELS` in order before using the local fallback. Radar remains deterministic and does not call AI.
+
+Verified PDF export requires an original DOCX and the isolated Microsoft Graph
+drive setup in `services/word-renderer/README.md`. LaTeX export is reserved for
+resumes originally uploaded as `.tex`. PDF and DOCX exports share one Word-guided
+fit pass: complete replacement candidates are tried in order, the original page
+count is preserved, and up to four eligible low-relevance bullets may be removed
+only as a final same-section fit contingency.
 
 Run the development server:
 

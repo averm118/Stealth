@@ -155,6 +155,23 @@ export type ResumeLayoutMapParagraph = {
   nearbyBulletIds?: string[];
   maxReplacementChars?: number;
   lockedRegions?: string[];
+  groupId?: string;
+  bulletIndex?: number;
+  bulletCount?: number;
+  format?: {
+    alignment?: "left" | "center" | "right" | "justify";
+    spacingBeforePt?: number;
+    spacingAfterPt?: number;
+    lineSpacing?: number;
+    leftIndentPt?: number;
+    rightIndentPt?: number;
+    firstLineIndentPt?: number;
+    hangingIndentPt?: number;
+    fontFamily?: string;
+    fontSizePt?: number;
+    bold?: boolean;
+    italic?: boolean;
+  };
   hasLockedDate: boolean;
   isBullet: boolean;
   canEdit: boolean;
@@ -166,6 +183,16 @@ export type ResumeLayoutMap = {
   source: "docx";
   paragraphs: ResumeLayoutMapParagraph[];
   sectionNames: string[];
+  page?: {
+    widthPt: number;
+    heightPt: number;
+    marginTopPt: number;
+    marginRightPt: number;
+    marginBottomPt: number;
+    marginLeftPt: number;
+  };
+  defaultFont?: string;
+  defaultFontSizePt?: number;
   generatedAt: string;
 };
 
@@ -188,6 +215,7 @@ export type ResumeEditOperation = {
   sectionName?: string;
   original: string;
   replacement: string;
+  replacementCandidates?: string[];
   keywords?: string[];
   priority?: number;
   evidenceSource?: string;
@@ -195,6 +223,32 @@ export type ResumeEditOperation = {
   fallbackParagraphIds?: string[];
   contentHash?: string;
   maxChars?: number;
+  originalRelevanceScore?: number;
+  replacementRelevanceScore?: number;
+  impactGain?: number;
+  estimatedWidthRatio?: number;
+  evidenceParagraphIds?: string[];
+  distinctContribution?: string;
+  reason: string;
+};
+
+export type ResumeFitRemovalCandidate = {
+  paragraphId: string;
+  sectionName: string;
+  groupId: string;
+  original: string;
+  relevanceScore: number;
+  contentHash?: string;
+  reason: string;
+};
+
+export type ResumeFitSkillPruneCandidate = {
+  paragraphId: string;
+  categoryLabel: string;
+  skill: string;
+  relevanceScore: number;
+  contentHash?: string;
+  originalText: string;
   reason: string;
 };
 
@@ -222,10 +276,75 @@ export type ResumeDocxEditStats = {
   convertedEdits?: number;
   autoShortenedEdits?: number;
   shortenedEdits?: number;
+  selectedCandidateCount?: number;
+  shortenedForFit?: number;
+  removedForFit?: number;
+  rejectedForFit?: number;
+  targetPageCount?: number;
+  finalPageCount?: number;
+  removedParagraphIds?: string[];
+  replacedLowRelevanceBullets?: number;
+  skillsPruned?: number;
+  prunedSkills?: string[];
+  fontScaleApplied?: number;
+  rejectedForRedundancy?: number;
   skippedByReason?: Record<string, number>;
   validationStatus: "valid" | "not_generated" | "failed";
   fontScale: number;
   warning?: string;
+};
+
+export type ResumePdfFidelityFailureReason =
+  | "page_overflow"
+  | "protected_anchor_moved"
+  | "line_growth"
+  | "typography_drift"
+  | "incomplete_text"
+  | "package_drift"
+  | "pixel_drift"
+  | "insufficient_anchors";
+
+export type ResumeVerifiedFitSelection = {
+  operationIndex: number;
+  candidateIndex: number;
+  paragraphId?: string;
+  contentHash?: string;
+  impactGain?: number;
+};
+
+export type ResumeVerifiedFitPlan = {
+  version: 1 | 2;
+  baselineFingerprint: string;
+  validationMode: "strict" | "balanced";
+  selections: ResumeVerifiedFitSelection[];
+  approvedSkillPrunes?: ResumeFitSkillPruneCandidate[];
+  approvedRemovalParagraphIds: string[];
+  bodyFontScale?: number;
+  rejectedOperationIndexes: number[];
+  renderAttempts: number;
+};
+
+export type ResumePdfFidelityReport = {
+  status: "verified" | "failed";
+  renderer: "microsoft_graph_word";
+  pageCount: number;
+  pageGeometryPreserved: boolean;
+  protectedAnchorsChecked: number;
+  stableAnchorsChecked: number;
+  maxAnchorDeltaPt: number;
+  packageIntegrityPreserved: boolean;
+  typographyPreserved: boolean;
+  dateAlignmentPreserved: boolean;
+  paragraphStructurePreserved: boolean;
+  fullTextCoveragePreserved: boolean;
+  pixelFidelityPreserved: boolean;
+  changedPixelsOutsideMasksRatio: number;
+  compactMode: boolean;
+  removedParagraphsVerified: number;
+  fontScaleApplied?: number;
+  fontScalingVerified?: boolean;
+  failureReasons: ResumePdfFidelityFailureReason[];
+  warnings: string[];
 };
 
 export type TailoredResumeResult = {
@@ -233,6 +352,8 @@ export type TailoredResumeResult = {
   missingKeywords: string[];
   suggestedSkills: string[];
   editOperations: ResumeEditOperation[];
+  fitRemovalCandidates: ResumeFitRemovalCandidate[];
+  fitSkillPruneCandidates: ResumeFitSkillPruneCandidate[];
   appliedChanges: ResumeAppliedChange[];
   skippedChanges: ResumeSkippedChange[];
   layoutAdjustment: ResumeLayoutAdjustment;

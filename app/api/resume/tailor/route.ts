@@ -4,6 +4,11 @@ import { prepareResumeForAi } from "@/lib/ai-text";
 import { callGeminiJson } from "@/lib/gemini";
 import { getJobById } from "@/lib/jobs";
 import { createResumeLayoutMapFromDocx } from "@/lib/resume-docx";
+import { selectCompleteReplacementCandidate } from "@/lib/resume-fit";
+import {
+  createSkillPruneCandidates,
+  scoreResumeEditOperations
+} from "@/lib/resume-impact";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import type {
   CandidateProfile,
@@ -13,6 +18,7 @@ import type {
   ResumeBulletRewrite,
   ResumeEditOperation,
   ResumeEditOperationType,
+  ResumeFitRemovalCandidate,
   ResumeLayoutAdjustment,
   ResumeLayoutMap,
   ResumeLayoutMapParagraph,
@@ -26,7 +32,6 @@ const maxResumeChars = 36000;
 const maxJobDescriptionChars = 42000;
 const maxGeneratedEditOperations = 32;
 const maxDocxLayoutLockedOperations = 14;
-const maxDocxLayoutLockedInsertions = 2;
 const maxBulletRewriteSummaries = 16;
 const lightTailoringEditThreshold = 6;
 
@@ -115,6 +120,8 @@ async function tailorResumeWithGemini(
           "You are Stealth's evidence-first resume tailoring assistant.",
           "Tailor one resume to one job using only the supplied original resume, extracted profile, and job description.",
           "Act as a layout-locked, evidence-first resume editor, not a layout designer.",
+          "For DOCX resumes, the original Word document is the apply-ready source of truth and is rendered through Microsoft Word.",
+          "Treat every mapped paragraph as a fixed Word layout slot: improve its language without changing its identity, purpose, run styling, or visual hierarchy.",
           "Keep the original resume structure, section order, headings, dates, contact block, margins, spacing, paragraph count, and layout intent.",
           "Preserve the original line-break style, section labels, section order, and compact resume density.",
           "Make the most important truthful changes for this specific job without changing the resume's overall look.",
@@ -132,10 +139,10 @@ async function tailorResumeWithGemini(
           "Highlight relevant projects and skills already present in the uploaded resume/profile.",
           "Preserve the candidate's actual experience level and work authorization signals.",
           docxMode
-            ? "Use only these DOCX operations: replace_paragraph_text, append_to_paragraph, replace_bullet, insert_bullet_after, shorten_paragraph. Do not use remove_low_priority_paragraph for DOCX resumes."
+            ? "Use only these DOCX operations: replace_paragraph_text, append_to_paragraph, replace_bullet, shorten_paragraph. Do not use insert_bullet_after or remove_low_priority_paragraph for DOCX resumes."
             : "Use editOperations for the actual changes: replace_line, append_to_line, or shorten_line.",
           docxMode
-            ? "Every DOCX operation must reference paragraphId, except insert_bullet_after may use insertAfterParagraphId."
+            ? "Every DOCX operation must reference paragraphId from resumeLayoutMap."
             : "Each text operation original should quote or closely paraphrase an existing resume line.",
           docxMode
             ? "For generate mode in DOCX layout mode, return 6 to 14 focused editOperations. Fewer is better than damaging layout."
@@ -143,22 +150,36 @@ async function tailorResumeWithGemini(
           "If evidence is limited, return a lighter set rather than padding unsupported changes.",
           "Set priority from 1 to 5 where 5 is job-critical, evidenceSource to the resume/profile evidence used, targetKeywords to the job keywords addressed, and maxChars to the target editable character budget when available.",
           docxMode
+            ? "For each DOCX operation, use replacement as the strongest complete version and return exactly two different complete replacementCandidates: concise and slot-safe. Target rendered-width ratios versus the original of 0.90-1.03 for replacement, 0.80-0.95 for concise, and 0.70-0.90 for slot-safe. Preserve every original fact and metric in all three versions."
+            : "replacementCandidates are optional in plain text mode.",
+          "Treat maxChars as preflight guidance. Never truncate a sentence or return a fragment; provide a complete shorter replacementCandidate instead.",
+          docxMode
+            ? "Also return up to 8 fitRemovalCandidates as low-relevance contingency bullets. They are not normal edits and will be considered only after Word proves that complete rewrites cannot preserve the original page count."
+            : "Return fitRemovalCandidates as an empty array in plain text mode.",
+          docxMode
+            ? "A fitRemovalCandidate must be an existing removable bullet with its exact paragraphId, sectionName, groupId, original text, relevanceScore from 0 to 100, contentHash when available, and a concise reason."
+            : "Do not suggest fit removals for plain text.",
+          docxMode
+            ? "Never nominate the first bullet in a group, a group with fewer than three bullets, adjacent bullets, protected metrics, or content from Skills, Education, Coursework, contact details, headings, dates, employers, or project names."
+            : "Preserve all original lines in plain text mode.",
+          docxMode
             ? "At least half of the operations should be replace_bullet, append_to_paragraph, or replace_paragraph_text unless the resume is already highly aligned."
             : "At least half of the operations should be replace_line or append_to_line unless the resume is already highly aligned.",
           "Do not return a near-identical resume when job-relevant supported changes are available.",
+          "Prefer replacing the least job-relevant bullet inside the same role or project with a stronger one-for-one rewrite. Evidence may be consolidated only from sibling bullets in that same role or project and must remain truthfully attributed.",
+          "Every bullet in a role or project must make a distinct contribution. Do not repeat the same action, outcome, metric, responsibility, or keyword phrase across sibling bullets.",
           docxMode
             ? "For role/project headers, never edit dates, locations, employers, schools, contact info, section headings, or divider lines."
             : "For append_to_line, replacement must be the complete updated line with all supported keywords naturally included.",
           docxMode
-            ? "For date_locked_header paragraphs, replacement may contain only the editable leftText before the tab. Never include or alter rightText/date values, and stay within editableCharBudget."
+            ? "Do not edit date_locked_header or role_header paragraphs. Employers, project names, role labels, tabs, and right-aligned dates are locked."
             : "Use append_to_line for supported missing keywords in existing Skills, Coursework, Project, or Experience lines.",
           "For shorten operations, replacement must keep the same truth but reduce length.",
-          "Use insert_bullet_after only when the resume has strong, job-relevant evidence and clear layout slack. Otherwise fold the detail into an existing related bullet or line.",
-          "When inserting bullets, keep them concise and balance them with same-section shortening nearby.",
-          "Prefer replace, append, insert, and shorten operations before using fontScale.",
+          "Never add a new paragraph or bullet in DOCX mode. Fold supported detail into an existing related line.",
+          "Prefer replace, append, and shorten operations that stay within the target paragraph's current line budget.",
           docxMode
             ? "DOCX physical removals are disallowed. If a low-priority line should change, return shorten_paragraph or replace_bullet instead."
-            : "Plain-text removals are paired-only: use remove_low_priority_paragraph only as a last resort when added same-section replacements or inserted bullets create one-page space pressure.",
+            : "Physical removals are disallowed. If a low-priority line should change, return shorten_line or replace_line instead.",
           "For any low-priority line, include a concise replacement whenever the line can be replaced or shortened instead of removed.",
           "Never remove contact info, section headings, divider lines, education identity, employers, dates, date rows, skills labels, or whole terminal sections like Projects, Certifications, Activities, Publications, or Leadership.",
           "For analyze mode, set tailoredResumeText to the original resume text unchanged.",
@@ -166,7 +187,8 @@ async function tailorResumeWithGemini(
             ? "For generate mode in DOCX layout mode, tailoredResumeText is only a preview. The source of truth is editOperations tied to paragraph IDs."
             : "For generate mode, return a complete tailored resume draft by applying editOperations to the original resume text.",
           "For generate mode, the final resume must be apply-ready and visually consistent with the original.",
-          "If the tailored resume needs more space, shorten less relevant lines and set layoutAdjustment.fontScale between 0.92 and 0.98.",
+          "The final operation plan must be safe to render through Word without changing page geometry, section rhythm, run formatting, or protected alignment.",
+          "Always set layoutAdjustment.fontScale to 1. Microsoft Word fitting, not the language model, decides whether eligible body text may be scaled after complete candidates are tested.",
           "Do not convert the resume into long paragraphs. Keep bullets and concise resume lines.",
           "Do not add new sections unless the original resume already has that section.",
           "Do not rewrite headings, dates, school names, company names, locations, contact details, or section divider text.",
@@ -213,6 +235,12 @@ async function tailorResumeWithGemini(
               : "editOperations should include all necessary truthful changes. original should quote or closely paraphrase the existing line to change. replacement should be the complete updated line.",
             "Each operation should include priority, evidenceSource, targetKeywords, and keywords when supported.",
             docxMode
+              ? "replacement is the strongest version at roughly the same rendered width as original. replacementCandidates must provide complete concise and slot-safe alternatives at progressively narrower widths."
+              : "Keep replacements concise and evidence-backed.",
+            docxMode
+              ? "fitRemovalCandidates are contingency-only low-relevance bullets. Use the layout map groupId and bulletIndex/bulletCount; never nominate the first bullet or a bullet from a group with fewer than three."
+              : "fitRemovalCandidates must be an empty array.",
+            docxMode
               ? "Use resumeLayoutMap metadata: include contentHash, fallbackParagraphIds, and maxChars from the selected paragraph when available."
               : "Use append_to_line for supported missing keywords in existing Skills, Coursework, Project, or Experience lines.",
             docxMode
@@ -222,7 +250,7 @@ async function tailorResumeWithGemini(
               ? "Use append_to_paragraph for Skills/Coursework lines and preserve bold labels by keeping the same label text before the colon."
               : "Use shorten_line if added keywords or stronger wording makes the resume too long.",
             docxMode
-              ? "Use replace_bullet for existing bullet paragraphs. Use insert_bullet_after only when there is clear layout slack; otherwise append the detail to a related existing bullet."
+              ? "Use replace_bullet for existing bullet paragraphs. Never insert a new bullet; append the detail to a related existing bullet when it fits."
               : "Set layoutAdjustment.fontScale below 1 only when needed to preserve one-page fit after edits.",
             docxMode
               ? "Do not use remove_low_priority_paragraph for DOCX resumes. Use shorten_paragraph or replace_bullet instead."
@@ -230,17 +258,26 @@ async function tailorResumeWithGemini(
             "bulletRewrites should summarize the most important replace_line/append_to_line operations for the UI.",
             "atsNotes should be concise practical notes.",
             "Do not ignore job-critical missing keywords when they are supported by the resume.",
+            "Choose targets by impact: replace a weaker same-group bullet only when the new wording adds supported job relevance and does not duplicate another bullet.",
             docxMode
               ? "For generate mode, aim for 6-14 mapped operations. Trim anything that might create visual gaps or spacing inconsistency."
               : "For generate mode, aim for 6-14 mapped operations when evidence exists; if fewer than 6 edits are justified, explain why in atsNotes.",
-            "The final resume draft must fit the original visual layout by keeping bullets concise, shortening low-priority lines, and using a small fontScale only when necessary."
+            docxMode
+              ? "The final resume draft must preserve the original page count. Word may prune low-relevance skill tokens, scale eligible body text no lower than 94%, or remove approved contingency bullets only after all complete replacement candidates are tried."
+              : "The final resume draft must fit the original visual layout by keeping bullets concise."
           ]
         })
       }
     ]
   });
 
-  return normalizeTailoredResumeResult(parsed, profile, mode, resumeLayoutMap);
+  return normalizeTailoredResumeResult(
+    parsed,
+    profile,
+    job,
+    mode,
+    resumeLayoutMap
+  );
 }
 
 function buildOriginalResumeResult(profile: CandidateProfile, note: string): TailoredResumeResult {
@@ -249,6 +286,8 @@ function buildOriginalResumeResult(profile: CandidateProfile, note: string): Tai
     missingKeywords: [],
     suggestedSkills: [],
     editOperations: [],
+    fitRemovalCandidates: [],
+    fitSkillPruneCandidates: [],
     appliedChanges: [],
     skippedChanges: [],
     layoutAdjustment: {
@@ -275,6 +314,7 @@ function buildOriginalResumeResult(profile: CandidateProfile, note: string): Tai
 function normalizeTailoredResumeResult(
   result: Partial<TailoredResumeResult>,
   profile: CandidateProfile,
+  job: Job,
   mode: "analyze" | "generate",
   resumeLayoutMap?: ResumeLayoutMap | null
 ): TailoredResumeResult {
@@ -283,7 +323,25 @@ function normalizeTailoredResumeResult(
     typeof result.tailoredResumeText === "string" && result.tailoredResumeText.trim()
       ? result.tailoredResumeText.trim()
       : originalResume;
-  const editOperations = cleanEditOperations(result.editOperations, result.bulletRewrites, resumeLayoutMap);
+  const cleanedEditOperations = cleanEditOperations(
+    result.editOperations,
+    result.bulletRewrites,
+    resumeLayoutMap
+  );
+  const impactResult = scoreResumeEditOperations({
+    operations: cleanedEditOperations,
+    job,
+    profile,
+    layoutMap: resumeLayoutMap
+  });
+  const editOperations = impactResult.operations;
+  const fitRemovalCandidates = cleanFitRemovalCandidates(result.fitRemovalCandidates, resumeLayoutMap);
+  const fitSkillPruneCandidates = createSkillPruneCandidates({
+    layoutMap: resumeLayoutMap,
+    job,
+    profile,
+    operations: editOperations
+  });
   const requestedLayoutAdjustment = cleanRequestedLayoutAdjustment(result.layoutAdjustment);
   const appliedResult: ResumeApplyResult =
     mode === "generate" && resumeLayoutMap?.paragraphs.length
@@ -296,9 +354,20 @@ function normalizeTailoredResumeResult(
           skippedChanges: [] as ResumeSkippedChange[]
         };
   const bulletRewrites = cleanBulletRewrites(result.bulletRewrites, editOperations);
-  const layoutAdjustment = cleanLayoutAdjustment(result.layoutAdjustment, originalResume, appliedResult.tailoredResumeText, appliedResult.appliedChanges.length);
+  const layoutAdjustment = resumeLayoutMap?.paragraphs.length
+    ? {
+        fontScale: 1,
+        reason: "Original DOCX typography and font sizes are locked."
+      }
+    : cleanLayoutAdjustment(
+        result.layoutAdjustment,
+        originalResume,
+        appliedResult.tailoredResumeText,
+        appliedResult.appliedChanges.length
+      );
   const generatedTailoredResumeText =
     mode === "generate" &&
+    !resumeLayoutMap?.paragraphs.length &&
     appliedResult.appliedChanges.length === 0 &&
     normalizeForResumeMatch(rawTailoredResumeText) !== normalizeForResumeMatch(originalResume)
       ? rawTailoredResumeText
@@ -321,6 +390,10 @@ function normalizeTailoredResumeResult(
           layoutAdjustment
         )
       : undefined;
+  if (docxEditStats && impactResult.rejectedForRedundancy > 0) {
+    docxEditStats.rejectedForRedundancy =
+      impactResult.rejectedForRedundancy;
+  }
   if (docxEditStats?.warning) atsNotes.unshift(docxEditStats.warning);
 
   return {
@@ -328,6 +401,8 @@ function normalizeTailoredResumeResult(
     missingKeywords: cleanArray(result.missingKeywords, 10),
     suggestedSkills: cleanArray(result.suggestedSkills, 8),
     editOperations,
+    fitRemovalCandidates,
+    fitSkillPruneCandidates,
     appliedChanges: appliedResult.appliedChanges,
     skippedChanges,
     layoutAdjustment,
@@ -357,6 +432,7 @@ function cleanEditOperations(
             sectionName?: unknown;
             original?: unknown;
             replacement?: unknown;
+            replacementCandidates?: unknown;
             rewrite?: unknown;
             keywords?: unknown;
             priority?: unknown;
@@ -371,11 +447,18 @@ function cleanEditOperations(
           const replacement = typeof record.replacement === "string" ? record.replacement : record.rewrite;
           if (!type || typeof record.original !== "string") return null;
           if (type !== "remove_low_priority_paragraph" && typeof replacement !== "string") return null;
+          const completeReplacement =
+            typeof replacement === "string" ? cleanCompleteReplacement(replacement) : "";
+          if (type !== "remove_low_priority_paragraph" && !completeReplacement) return null;
 
           const operation: ResumeEditOperation = {
             type,
             original: limitText(record.original, 360),
-            replacement: typeof replacement === "string" ? limitText(replacement, 520) : "",
+            replacement: completeReplacement,
+            replacementCandidates: cleanReplacementCandidates(
+              record.replacementCandidates,
+              completeReplacement
+            ),
             keywords: cleanArray(record.keywords, 8),
             priority: cleanOperationPriority(record.priority, type),
             evidenceSource:
@@ -410,7 +493,7 @@ function cleanEditOperations(
         return {
           type: "replace_line" as const,
           original: limitText(record.original, 360),
-          replacement: limitText(record.rewrite, 420),
+          replacement: cleanCompleteReplacement(record.rewrite),
           keywords: [],
           priority: 3,
           reason: typeof record.reason === "string" ? limitText(record.reason, 180) : "Improves alignment with the job."
@@ -421,22 +504,86 @@ function cleanEditOperations(
   return prepareLayoutLockedEditOperations(dedupeEditOperations(fallbackOperations), resumeLayoutMap);
 }
 
+function cleanFitRemovalCandidates(
+  value: unknown,
+  resumeLayoutMap?: ResumeLayoutMap | null
+): ResumeFitRemovalCandidate[] {
+  if (!Array.isArray(value) || !resumeLayoutMap?.paragraphs.length) return [];
+
+  const paragraphById = new Map(
+    resumeLayoutMap.paragraphs.map((paragraph) => [paragraph.id, paragraph])
+  );
+  const seen = new Set<string>();
+
+  return value
+    .map((item): ResumeFitRemovalCandidate | null => {
+      if (!item || typeof item !== "object") return null;
+      const record = item as Partial<ResumeFitRemovalCandidate>;
+      if (
+        typeof record.paragraphId !== "string" ||
+        typeof record.sectionName !== "string" ||
+        typeof record.groupId !== "string" ||
+        typeof record.original !== "string"
+      ) {
+        return null;
+      }
+
+      const paragraph = paragraphById.get(record.paragraphId);
+      if (
+        !paragraph ||
+        seen.has(paragraph.id) ||
+        !paragraph.isBullet ||
+        !paragraph.canRemove ||
+        paragraph.hasLockedDate ||
+        paragraph.hasTabStop ||
+        (paragraph.bulletIndex ?? 0) < 1 ||
+        (paragraph.bulletCount ?? 0) < 3 ||
+        !isFitRemovalSection(paragraph.sectionName) ||
+        containsProtectedMetric(paragraph.text) ||
+        normalizeForResumeMatch(record.original) !== normalizeForResumeMatch(paragraph.text)
+      ) {
+        return null;
+      }
+
+      seen.add(paragraph.id);
+      return {
+        paragraphId: paragraph.id,
+        sectionName: paragraph.sectionName || record.sectionName,
+        groupId: paragraph.groupId || record.groupId,
+        original: paragraph.text,
+        relevanceScore: clampScore(record.relevanceScore, 50),
+        contentHash: paragraph.contentHash,
+        reason:
+          typeof record.reason === "string"
+            ? limitText(record.reason, 180)
+            : "Lower relevance than the accepted same-section improvement."
+      };
+    })
+    .filter((item): item is ResumeFitRemovalCandidate => Boolean(item))
+    .sort((first, second) => first.relevanceScore - second.relevanceScore)
+    .slice(0, 8);
+}
+
+function isFitRemovalSection(sectionName?: string) {
+  return /\b(experience|employment|work|projects?|leadership|activities|involvement|volunteer|organizations?|awards?)\b/i.test(
+    sectionName || ""
+  );
+}
+
+function containsProtectedMetric(value: string) {
+  return /(?:[$€£]\s?\d|\b\d+(?:\.\d+)?\s?%|\b\d+\+|\b\d{2,}\b)/.test(value);
+}
+
 function prepareLayoutLockedEditOperations(operations: ResumeEditOperation[], resumeLayoutMap?: ResumeLayoutMap | null) {
   const layoutParagraphs = resumeLayoutMap?.paragraphs ?? [];
   const paragraphById = new Map(layoutParagraphs.map((paragraph) => [paragraph.id, paragraph]));
   if (!layoutParagraphs.length) return operations.sort(compareResumeEditOperations).slice(0, maxDocxLayoutLockedOperations);
 
-  const insertionCounts = {
-    total: 0,
-    bySection: new Map<string, number>()
-  };
-  const hasInsertionSlack = hasClearDocxInsertionSlack(layoutParagraphs);
-
   return operations
     .map((operation) => enrichOperationWithLayoutMetadata(operation, layoutParagraphs, paragraphById))
     .filter((operation) => !layoutParagraphs.length || Boolean(resolveSafeLayoutOperationTarget(operation, layoutParagraphs, paragraphById)))
     .sort(compareResumeEditOperations)
-    .map((operation) => normalizeLayoutLockedOperation(operation, layoutParagraphs, paragraphById, insertionCounts, hasInsertionSlack))
+    .map((operation) => normalizeLayoutLockedOperation(operation, layoutParagraphs, paragraphById))
     .filter((operation): operation is ResumeEditOperation => Boolean(operation))
     .slice(0, maxDocxLayoutLockedOperations);
 }
@@ -444,9 +591,7 @@ function prepareLayoutLockedEditOperations(operations: ResumeEditOperation[], re
 function normalizeLayoutLockedOperation(
   operation: ResumeEditOperation,
   paragraphs: ResumeLayoutMapParagraph[],
-  paragraphById: Map<string, ResumeLayoutMapParagraph>,
-  insertionCounts: { total: number; bySection: Map<string, number> },
-  hasInsertionSlack: boolean
+  paragraphById: Map<string, ResumeLayoutMapParagraph>
 ): ResumeEditOperation | null {
   const target = resolveSafeLayoutOperationTarget(operation, paragraphs, paragraphById);
   if (!target) return null;
@@ -456,21 +601,6 @@ function normalizeLayoutLockedOperation(
   }
 
   if (operation.type === "insert_bullet_after") {
-    const sectionKey = getLayoutPairingKey(target);
-    const sectionInsertions = insertionCounts.bySection.get(sectionKey) ?? 0;
-    const canInsert =
-      hasInsertionSlack &&
-      insertionCounts.total < maxDocxLayoutLockedInsertions &&
-      sectionInsertions < 1 &&
-      target.canInsertAfter &&
-      Boolean(operation.replacement.trim());
-
-    if (canInsert) {
-      insertionCounts.total += 1;
-      insertionCounts.bySection.set(sectionKey, sectionInsertions + 1);
-      return operation;
-    }
-
     return convertLayoutInsertionToInPlaceOperation(operation, target, paragraphs, paragraphById) ?? operation;
   }
 
@@ -567,11 +697,7 @@ function fitFoldedLayoutDetail(
   const separator = /[.;:]$/.test(current) ? " " : "; ";
   const combined = `${current.replace(/\s+/g, " ").trim()}${separator}${detail.replace(/\s+/g, " ").trim()}`;
   if (!budget || combined.length <= budget) return combined;
-
-  const available = budget - current.length - separator.length;
-  if (available < 24) return "";
-  const shortenedDetail = detail.slice(0, available).replace(/\s+\S*$/, "").trim();
-  return shortenedDetail ? `${current}${separator}${shortenedDetail}` : "";
+  return "";
 }
 
 function stripResumeBulletPrefix(value: string) {
@@ -669,7 +795,15 @@ function getOperationTargetId(operation: ResumeEditOperation) {
 function canUseLayoutParagraphForOperation(operation: ResumeEditOperation, paragraph: ResumeLayoutMapParagraph) {
   if (operation.type === "insert_bullet_after") return paragraph.canInsertAfter;
   if (operation.type === "remove_low_priority_paragraph") return paragraph.canEdit || paragraph.canRemove;
-  if (!paragraph.canEdit || paragraph.role === "contact_header" || paragraph.role === "section_heading" || paragraph.role === "divider" || paragraph.role === "blank") {
+  if (
+    !paragraph.canEdit ||
+    paragraph.role === "contact_header" ||
+    paragraph.role === "section_heading" ||
+    paragraph.role === "divider" ||
+    paragraph.role === "blank" ||
+    paragraph.role === "role_header" ||
+    paragraph.role === "date_locked_header"
+  ) {
     return false;
   }
 
@@ -850,7 +984,6 @@ function applyPlainTextEditOperations(originalResume: string, operations: Resume
 
   const lines = originalResume.split(/\n/);
   const usedLineIndexes = new Set<number>();
-  const acceptedImprovementCounts = new Map<string, number>();
   const appliedChanges: ResumeAppliedChange[] = [];
   const skippedChanges: ResumeSkippedChange[] = [];
 
@@ -877,46 +1010,15 @@ function applyPlainTextEditOperations(originalResume: string, operations: Resume
           matchedText: originalLine.trim(),
           repairNote: "Converted removal request to replacement."
         });
-        if (converted.type !== "shorten_line") {
-          recordAcceptedPlainTextImprovement(acceptedImprovementCounts, lines, match.index, operation);
-        }
         return;
       }
 
-      if (operation.replacement.trim()) {
-        skippedChanges.push({
-          ...operation,
-          skipReason: "Removal replacement was empty or did not improve the matched line.",
-          skipCategory: "content"
-        });
-        return;
-      }
-
-      const sectionKey = getPlainTextSectionKey(lines, match.index, operation);
-      if (!hasAvailablePairedImprovement(acceptedImprovementCounts, sectionKey)) {
-        skippedChanges.push({
-          ...operation,
-          skipReason: "Removal skipped because no stronger same-section edit was accepted to replace its space.",
-          skipCategory: "unpaired_removal"
-        });
-        return;
-      }
-
-      if (!canRemovePlainTextLine(lines, match.index, operation)) {
-        skippedChanges.push({
-          ...operation,
-          skipReason: "This line is protected from removal or needed to preserve resume structure.",
-          skipCategory: "protected_layout"
-        });
-        return;
-      }
-
-      consumePairedImprovement(acceptedImprovementCounts, sectionKey);
-      lines.splice(match.index, 1);
-      shiftUsedLineIndexes(usedLineIndexes, match.index, -1);
-      appliedChanges.push({
+      skippedChanges.push({
         ...operation,
-        matchedText: originalLine.trim()
+        skipReason: operation.replacement.trim()
+          ? "Removal replacement was empty or did not improve the matched line."
+          : "Physical line removal is disabled by the exact DOCX layout lock.",
+        skipCategory: operation.replacement.trim() ? "content" : "layout_locked_removal"
       });
       return;
     }
@@ -928,7 +1030,6 @@ function applyPlainTextEditOperations(originalResume: string, operations: Resume
         ...operation,
         matchedText: originalLine.trim()
       });
-      recordAcceptedPlainTextImprovement(acceptedImprovementCounts, lines, match.index, operation);
       return;
     }
 
@@ -939,9 +1040,6 @@ function applyPlainTextEditOperations(originalResume: string, operations: Resume
       ...operation,
       matchedText: originalLine.trim()
     });
-    if (isPairingImprovementOperation(operation.type)) {
-      recordAcceptedPlainTextImprovement(acceptedImprovementCounts, lines, match.index, operation);
-    }
   });
 
   return {
@@ -1106,11 +1204,6 @@ function applyLayoutMapEditOperations(
   const skippedChanges: ResumeSkippedChange[] = [];
   const stats = createPreviewDocxStats(requestedLayoutAdjustment);
   const acceptedImprovementCounts = new Map<string, number>();
-  const insertionCounts = {
-    total: 0,
-    bySection: new Map<string, number>()
-  };
-  const hasInsertionSlack = hasClearDocxInsertionSlack(layoutMap.paragraphs);
 
   operations.slice().sort(compareResumeEditOperations).forEach((operation) => {
     const resolved = resolvePreviewOperationTarget(operation, paragraphs, paragraphIndexById);
@@ -1141,6 +1234,7 @@ function applyLayoutMapEditOperations(
         appliedChanges.push({
           ...operation,
           type: converted.type,
+          replacement: converted.text,
           matchedText: originalText,
           repairNote: "Converted removal request to replacement."
         });
@@ -1165,93 +1259,55 @@ function applyLayoutMapEditOperations(
     }
 
     if (operation.type === "insert_bullet_after") {
-      const sectionKey = getLayoutPairingKey(paragraph);
-      const sectionInsertions = insertionCounts.bySection.get(sectionKey) ?? 0;
-      const canInsert =
-        hasInsertionSlack &&
-        insertionCounts.total < maxDocxLayoutLockedInsertions &&
-        sectionInsertions < 1 &&
-        paragraph.canInsertAfter &&
-        Boolean(operation.replacement.trim());
+      const converted = convertLayoutInsertionToInPlaceOperation(
+        operation,
+        paragraph,
+        paragraphs,
+        new Map(paragraphs.map((candidate) => [candidate.id, candidate]))
+      );
+      const convertedResolved = converted ? resolvePreviewOperationTarget(converted, paragraphs, paragraphIndexById) : null;
+      const convertedIndex = typeof convertedResolved?.index === "number" ? convertedResolved.index : undefined;
+      const convertedParagraph = typeof convertedIndex === "number" ? paragraphs[convertedIndex] : null;
 
-      if (!canInsert) {
-        const converted = convertLayoutInsertionToInPlaceOperation(
+      if (!converted || !convertedParagraph?.canEdit) {
+        recordPreviewSkip(
+          stats,
+          skippedChanges,
           operation,
-          paragraph,
-          paragraphs,
-          new Map(paragraphs.map((candidate) => [candidate.id, candidate]))
+          "Insertion skipped because exact layout mode cannot add paragraphs.",
+          "unsafe_insertion"
         );
-        const convertedResolved = converted ? resolvePreviewOperationTarget(converted, paragraphs, paragraphIndexById) : null;
-        const convertedIndex = typeof convertedResolved?.index === "number" ? convertedResolved.index : undefined;
-        const convertedParagraph = typeof convertedIndex === "number" ? paragraphs[convertedIndex] : null;
-
-        if (!converted || !convertedParagraph?.canEdit) {
-          recordPreviewSkip(
-            stats,
-            skippedChanges,
-            operation,
-            "Insertion skipped because there was not enough layout slack for a new bullet.",
-            "unsafe_insertion"
-          );
-          return;
-        }
-
-        const replacement = fitPreviewReplacementToBudget(convertedParagraph, converted.replacement.trim(), converted.maxChars);
-        if (!replacement.text) {
-          recordPreviewSkip(stats, skippedChanges, operation, "Converted insertion was too long for the target line.", "visual_gap_risk");
-          return;
-        }
-
-        const originalText = convertedParagraph.text.trim();
-        convertedParagraph.text = mergeEditablePreviewText(convertedParagraph, replacement.text);
-        convertedParagraph.editableText = replacement.text;
-        appliedChanges.push({
-          ...converted,
-          matchedText: originalText,
-          repairNote: "Converted insertion to in-place edit."
-        });
-        stats.appliedEdits += 1;
-        stats.convertedEdits = (stats.convertedEdits ?? 0) + 1;
-        if (replacement.shortened) {
-          stats.autoShortenedEdits = (stats.autoShortenedEdits ?? 0) + 1;
-          stats.shortenedEdits = (stats.shortenedEdits ?? 0) + 1;
-        }
-        if (convertedResolved?.repaired) stats.repairedEdits = (stats.repairedEdits ?? 0) + 1;
-        recordAcceptedLayoutImprovement(acceptedImprovementCounts, convertedParagraph);
         return;
       }
 
-      if (!paragraph.canInsertAfter || !operation.replacement.trim()) {
-        recordPreviewSkip(stats, skippedChanges, operation, "This paragraph cannot safely receive an inserted bullet.", "protected_layout");
+      const replacement = fitPreviewReplacementToBudget(
+        convertedParagraph,
+        converted.replacement.trim(),
+        converted.maxChars,
+        converted.replacementCandidates
+      );
+      if (!replacement.text) {
+        recordPreviewSkip(stats, skippedChanges, operation, "Converted insertion was too long for the target line.", "visual_gap_risk");
         return;
       }
-      const inserted: ResumeLayoutMapParagraph = {
-        ...paragraph,
-        id: `${paragraph.id}-insert-${appliedChanges.length + 1}`,
-        role: "bullet",
-        text: preserveLinePrefix(paragraph.isBullet ? paragraph.text : "• ", operation.replacement),
-        editableText: operation.replacement,
-        lockedText: undefined,
-        leftText: operation.replacement,
-        rightText: undefined,
-        hasTabStop: false,
-        tabStopSignature: undefined,
-        isTerminalSection: paragraph.isTerminalSection,
-        editableCharBudget: paragraph.editableCharBudget,
-        hasLockedDate: false,
-        isBullet: true,
-        canEdit: true,
-        canInsertAfter: true,
-        canRemove: true
-      };
-      paragraphs.splice(index + 1, 0, inserted);
-      rebuildParagraphIndex(paragraphs, paragraphIndexById);
-      appliedChanges.push({ ...operation, matchedText: paragraph.text.trim() });
-      stats.insertedBullets += 1;
-      if (repaired) stats.repairedEdits = (stats.repairedEdits ?? 0) + 1;
-      insertionCounts.total += 1;
-      insertionCounts.bySection.set(sectionKey, sectionInsertions + 1);
-      recordAcceptedLayoutImprovement(acceptedImprovementCounts, paragraph);
+
+      const originalText = convertedParagraph.text.trim();
+      convertedParagraph.text = mergeEditablePreviewText(convertedParagraph, replacement.text);
+      convertedParagraph.editableText = replacement.text;
+      appliedChanges.push({
+        ...converted,
+        replacement: replacement.text,
+        matchedText: originalText,
+        repairNote: "Converted insertion to in-place edit."
+      });
+      stats.appliedEdits += 1;
+      stats.convertedEdits = (stats.convertedEdits ?? 0) + 1;
+      if (replacement.shortened) {
+        stats.autoShortenedEdits = (stats.autoShortenedEdits ?? 0) + 1;
+        stats.shortenedEdits = (stats.shortenedEdits ?? 0) + 1;
+      }
+      if (convertedResolved?.repaired) stats.repairedEdits = (stats.repairedEdits ?? 0) + 1;
+      recordAcceptedLayoutImprovement(acceptedImprovementCounts, convertedParagraph);
       return;
     }
 
@@ -1260,15 +1316,27 @@ function applyLayoutMapEditOperations(
       return;
     }
 
-    const replacement = fitPreviewReplacementToBudget(paragraph, operation.replacement.trim(), operation.maxChars);
+    const replacement = fitPreviewReplacementToBudget(
+      paragraph,
+      operation.replacement.trim(),
+      operation.maxChars,
+      operation.replacementCandidates
+    );
     if (!replacement.text) {
-      recordPreviewSkip(stats, skippedChanges, operation, "Replacement text was empty.", "content");
+      recordPreviewSkip(
+        stats,
+        skippedChanges,
+        operation,
+        "No complete replacement candidate fit this paragraph.",
+        "replacement_did_not_fit"
+      );
       return;
     }
 
+    const originalText = paragraph.text.trim();
     paragraph.text = mergeEditablePreviewText(paragraph, replacement.text);
     paragraph.editableText = replacement.text;
-    appliedChanges.push({ ...operation, matchedText: paragraph.text.trim() });
+    appliedChanges.push({ ...operation, replacement: replacement.text, matchedText: originalText });
     stats.appliedEdits += 1;
     if (isPairingImprovementOperation(operation.type)) {
       recordAcceptedLayoutImprovement(acceptedImprovementCounts, paragraph);
@@ -1365,7 +1433,12 @@ function convertPreviewRemovalToReplacement(paragraph: ResumeLayoutMapParagraph,
   const replacement = operation.replacement.trim();
   if (!paragraph.canEdit || !current) return null;
 
-  const fitted = fitPreviewReplacementToBudget(paragraph, replacement, operation.maxChars);
+  const fitted = fitPreviewReplacementToBudget(
+    paragraph,
+    replacement,
+    operation.maxChars,
+    operation.replacementCandidates
+  );
   if (!fitted.text || normalizeForResumeMatch(fitted.text) === normalizeForResumeMatch(current)) return null;
 
   return {
@@ -1447,29 +1520,36 @@ function canRemoveLayoutParagraph(paragraph: ResumeLayoutMapParagraph, paragraph
 function fitPreviewReplacementToBudget(
   paragraph: ResumeLayoutMapParagraph,
   replacement: string,
-  requestedMaxChars?: number
+  requestedMaxChars?: number,
+  replacementCandidates?: string[]
 ): PreviewReplacement {
-  let safeReplacement = replacement.replace(/\s+/g, " ").trim();
-  if (paragraph.role === "date_locked_header") {
-    safeReplacement = safeReplacement.replace(/\t.*/, "").trim();
-    if (paragraph.rightText) {
-      safeReplacement = safeReplacement.replace(new RegExp(`${escapeRegExp(paragraph.rightText)}\\s*$`, "i"), "").trim();
-    }
-  }
-
   const layoutBudget = paragraph.maxReplacementChars ?? paragraph.editableCharBudget;
   const operationBudget =
     typeof requestedMaxChars === "number" && Number.isFinite(requestedMaxChars)
       ? Math.max(24, Math.min(900, Math.round(requestedMaxChars)))
       : undefined;
   const budget = layoutBudget && operationBudget ? Math.min(layoutBudget, operationBudget) : layoutBudget ?? operationBudget;
-  if (!budget || safeReplacement.length <= budget) return { text: safeReplacement, shortened: false };
+  const selected = selectCompleteReplacementCandidate({
+    replacement,
+    replacementCandidates,
+    maxChars: budget,
+    transform: (candidate) => {
+      let safeCandidate = candidate.replace(/\s+/g, " ").trim();
+      if (paragraph.role === "date_locked_header") {
+        safeCandidate = safeCandidate.replace(/\t.*/, "").trim();
+        if (paragraph.rightText) {
+          safeCandidate = safeCandidate
+            .replace(new RegExp(`${escapeRegExp(paragraph.rightText)}\\s*$`, "i"), "")
+            .trim();
+        }
+      }
+      return safeCandidate;
+    }
+  });
 
-  const shortened = safeReplacement.slice(0, Math.max(24, budget - 1)).replace(/\s+\S*$/, "").trim();
-  return {
-    text: shortened || safeReplacement.slice(0, budget).trim(),
-    shortened: true
-  };
+  return selected
+    ? { text: selected.text, shortened: selected.usedAlternative }
+    : { text: "", shortened: false };
 }
 
 function mergeEditablePreviewText(paragraph: ResumeLayoutMapParagraph, replacement: string) {
@@ -1584,6 +1664,22 @@ function cleanArray(value: unknown, maxItems: number) {
     .slice(0, maxItems);
 }
 
+function cleanReplacementCandidates(value: unknown, selectedReplacement: string) {
+  const candidates = Array.isArray(value)
+    ? value
+        .filter((item): item is string => typeof item === "string")
+        .map((item) => cleanCompleteReplacement(item))
+        .filter(Boolean)
+    : [];
+  const selected = cleanCompleteReplacement(selectedReplacement);
+  return [...new Set([selected, ...candidates].filter(Boolean))].slice(0, 3);
+}
+
+function cleanCompleteReplacement(value: string) {
+  const cleaned = value.replace(/\s+/g, " ").trim();
+  return cleaned.length <= 2000 ? cleaned : "";
+}
+
 function limitText(value: string, maxLength: number) {
   const cleaned = value.replace(/\s+/g, " ").trim();
   if (cleaned.length <= maxLength) return cleaned;
@@ -1609,6 +1705,15 @@ function cleanResumeLayoutMap(value: unknown): ResumeLayoutMap | null {
         id: limitText(paragraph.id, 40),
         role: isResumeParagraphRole(paragraph.role) ? paragraph.role : "body",
         sectionName: typeof paragraph.sectionName === "string" ? limitText(paragraph.sectionName, 90) : undefined,
+        groupId: typeof paragraph.groupId === "string" ? limitText(paragraph.groupId, 80) : undefined,
+        bulletIndex:
+          typeof paragraph.bulletIndex === "number" && Number.isFinite(paragraph.bulletIndex)
+            ? Math.max(0, Math.round(paragraph.bulletIndex))
+            : undefined,
+        bulletCount:
+          typeof paragraph.bulletCount === "number" && Number.isFinite(paragraph.bulletCount)
+            ? Math.max(0, Math.round(paragraph.bulletCount))
+            : undefined,
         text: limitText(paragraph.text, 900),
         editableText: typeof paragraph.editableText === "string" ? limitText(paragraph.editableText, 700) : "",
         lockedText: typeof paragraph.lockedText === "string" ? limitText(paragraph.lockedText, 120) : undefined,
@@ -1634,6 +1739,7 @@ function cleanResumeLayoutMap(value: unknown): ResumeLayoutMap | null {
             ? Math.max(0, Math.min(900, Math.round(paragraph.maxReplacementChars)))
             : undefined,
         lockedRegions: cleanArray(paragraph.lockedRegions, 8),
+        format: cleanResumeParagraphFormat(paragraph.format),
         hasLockedDate: Boolean(paragraph.hasLockedDate),
         isBullet: Boolean(paragraph.isBullet),
         canEdit: Boolean(paragraph.canEdit),
@@ -1645,11 +1751,70 @@ function cleanResumeLayoutMap(value: unknown): ResumeLayoutMap | null {
     .slice(0, 180);
 
   if (!paragraphs.length) return null;
+  const page = cleanResumePageGeometry(record.page);
   return {
     source: "docx",
     paragraphs,
     sectionNames: cleanArray(record.sectionNames, 20),
+    page,
+    defaultFont: typeof record.defaultFont === "string" ? limitText(record.defaultFont, 80) : undefined,
+    defaultFontSizePt:
+      typeof record.defaultFontSizePt === "number" && Number.isFinite(record.defaultFontSizePt)
+        ? Math.max(6, Math.min(18, record.defaultFontSizePt))
+        : undefined,
     generatedAt: typeof record.generatedAt === "string" ? record.generatedAt : new Date().toISOString()
+  };
+}
+
+function cleanResumePageGeometry(value: unknown): ResumeLayoutMap["page"] | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const page = value as Partial<NonNullable<ResumeLayoutMap["page"]>>;
+  const fields = [
+    page.widthPt,
+    page.heightPt,
+    page.marginTopPt,
+    page.marginRightPt,
+    page.marginBottomPt,
+    page.marginLeftPt
+  ];
+  if (!fields.every((item) => typeof item === "number" && Number.isFinite(item))) return undefined;
+
+  return {
+    widthPt: Math.max(360, Math.min(1000, page.widthPt as number)),
+    heightPt: Math.max(500, Math.min(1400, page.heightPt as number)),
+    marginTopPt: Math.max(12, Math.min(180, page.marginTopPt as number)),
+    marginRightPt: Math.max(12, Math.min(180, page.marginRightPt as number)),
+    marginBottomPt: Math.max(12, Math.min(180, page.marginBottomPt as number)),
+    marginLeftPt: Math.max(12, Math.min(180, page.marginLeftPt as number))
+  };
+}
+
+function cleanResumeParagraphFormat(value: unknown): ResumeLayoutMapParagraph["format"] | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const format = value as NonNullable<ResumeLayoutMapParagraph["format"]>;
+  const alignment =
+    format.alignment === "left" ||
+    format.alignment === "center" ||
+    format.alignment === "right" ||
+    format.alignment === "justify"
+      ? format.alignment
+      : undefined;
+  const number = (item: unknown, min: number, max: number) =>
+    typeof item === "number" && Number.isFinite(item) ? Math.max(min, Math.min(max, item)) : undefined;
+
+  return {
+    alignment,
+    spacingBeforePt: number(format.spacingBeforePt, 0, 72),
+    spacingAfterPt: number(format.spacingAfterPt, 0, 72),
+    lineSpacing: number(format.lineSpacing, 0.7, 3),
+    leftIndentPt: number(format.leftIndentPt, -72, 180),
+    rightIndentPt: number(format.rightIndentPt, -72, 180),
+    firstLineIndentPt: number(format.firstLineIndentPt, -72, 180),
+    hangingIndentPt: number(format.hangingIndentPt, 0, 180),
+    fontFamily: typeof format.fontFamily === "string" ? limitText(format.fontFamily, 80) : undefined,
+    fontSizePt: number(format.fontSizePt, 6, 32),
+    bold: typeof format.bold === "boolean" ? format.bold : undefined,
+    italic: typeof format.italic === "boolean" ? format.italic : undefined
   };
 }
 
@@ -1679,6 +1844,9 @@ function compactResumeLayoutMap(layoutMap: ResumeLayoutMap) {
         id: paragraph.id,
         role: paragraph.role,
         sectionName: paragraph.sectionName,
+        groupId: paragraph.groupId,
+        bulletIndex: paragraph.bulletIndex,
+        bulletCount: paragraph.bulletCount,
         text: paragraph.role === "date_locked_header" ? paragraph.leftText || paragraph.editableText || paragraph.text : paragraph.text,
         editableText: paragraph.editableText,
         lockedText: paragraph.lockedText,
@@ -1747,6 +1915,7 @@ const tailoredResumeSchema = {
     "missingKeywords",
     "suggestedSkills",
     "editOperations",
+    "fitRemovalCandidates",
     "layoutAdjustment",
     "bulletRewrites",
     "atsNotes",
@@ -1796,6 +1965,12 @@ const tailoredResumeSchema = {
           sectionName: { type: "string" },
           original: { type: "string" },
           replacement: { type: "string" },
+          replacementCandidates: {
+            type: "array",
+            minItems: 2,
+            maxItems: 2,
+            items: { type: "string" }
+          },
           keywords: {
             type: "array",
             maxItems: 8,
@@ -1823,6 +1998,35 @@ const tailoredResumeSchema = {
             minimum: 24,
             maximum: 900
           },
+          reason: { type: "string" }
+        }
+      }
+    },
+    fitRemovalCandidates: {
+      type: "array",
+      maxItems: 8,
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: [
+          "paragraphId",
+          "sectionName",
+          "groupId",
+          "original",
+          "relevanceScore",
+          "reason"
+        ],
+        properties: {
+          paragraphId: { type: "string" },
+          sectionName: { type: "string" },
+          groupId: { type: "string" },
+          original: { type: "string" },
+          relevanceScore: {
+            type: "number",
+            minimum: 0,
+            maximum: 100
+          },
+          contentHash: { type: "string" },
           reason: { type: "string" }
         }
       }

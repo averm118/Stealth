@@ -7,9 +7,12 @@
     "build": "next build",
     "start": "next start",
     "test:ai": "node scripts/ai-evaluation.mjs",
+    "test:latex": "node --experimental-strip-types scripts/resume-latex-evaluation.mjs",
+    "test:resume-fidelity": "node --conditions=react-server --experimental-strip-types scripts/resume-fidelity-evaluation.mjs",
     "lint": "next lint"
   },
   "dependencies": {
+    "@napi-rs/canvas": "^0.1.100",
     "@radix-ui/react-slot": "^1.1.0",
     "@react-three/fiber": "^9.6.1",
     "@supabase/ssr": "^0.10.3",
@@ -26,6 +29,7 @@
     "pdf-parse": "^2.4.5",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "server-only": "^0.0.1",
     "tailwind-merge": "^2.6.0",
     "three": "^0.184.0"
   },

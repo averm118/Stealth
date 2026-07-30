@@ -123,6 +123,17 @@ The profile page has two aligned, same-height primary panels:
 
 The profile area should stay concise and trustworthy. Do not reintroduce long chip walls, personality sections, extraction notes, or overly verbose generated summaries.
 
+## Resume Tailoring Architecture
+
+- The original DOCX is the visual source of truth. Stealth edits approved `w:t` text nodes inside existing runs and does not reconstruct DOCX resumes in LaTeX.
+- All non-document OOXML parts remain byte-identical. Paragraph properties, run properties, tabs, numbering, styles, fonts, margins, headers, footers, drawings, relationships, and section geometry stay locked.
+- Tailoring is evidence-backed and slot-constrained. Names, contact details, headings, dates, employers, metrics, and right-aligned columns remain protected.
+- Paragraph insertion, arbitrary deletion, global font scaling, and margin changes are disallowed in exact mode. As a final page-fit contingency, the shared Word fitter may physically remove up to four approved low-relevance bullets, with at most two per section and one per role/project/activity group.
+- Microsoft Graph renders every fit attempt with Microsoft Word. Complete replacement candidates are tried strongest to shortest, and the same verified operation plan powers both PDF and DOCX. Export preserves the original page count and validates page geometry, protected anchors, date alignment, typography, complete replacement text, and rendered line structure.
+- Editable DOCX remains available as the exact-format source. PDF, TXT, and Markdown inputs remain clearly labeled best effort.
+- LaTeX export is reserved for resumes originally uploaded as native `.tex` source.
+- Production Word rendering requires the isolated Graph setup documented in `services/word-renderer/README.md` and all `MS_GRAPH_*` server variables.
+
 ## Dashboard Current UX
 
 Main file:
